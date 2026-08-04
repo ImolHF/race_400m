@@ -1,180 +1,214 @@
-# Copyright (c) 2022-2025, The Isaac Lab Project Developers (https://github.com/isaac-sim/IsaacLab/blob/main/CONTRIBUTORS.md).
-# All rights reserved.
-#
-# SPDX-License-Identifier: BSD-3-Clause
+# source/race_400m/race_400m/tasks/manager_based/race_400m/race_env_cfg.py
 
-import math
-
-import isaaclab.sim as sim_utils
-from isaaclab.assets import ArticulationCfg, AssetBaseCfg
+import torch
+import numpy as np
 from isaaclab.envs import ManagerBasedRLEnvCfg
-from isaaclab.managers import EventTermCfg as EventTerm
-from isaaclab.managers import ObservationGroupCfg as ObsGroup
-from isaaclab.managers import ObservationTermCfg as ObsTerm
-from isaaclab.managers import RewardTermCfg as RewTerm
-from isaaclab.managers import SceneEntityCfg
-from isaaclab.managers import TerminationTermCfg as DoneTerm
-from isaaclab.scene import InteractiveSceneCfg
+from isaaclab.managers import (
+    ObservationManagerCfg,
+    RewardManagerCfg,
+    TerminationManagerCfg,
+    ActionManagerCfg,
+    SceneEntityCfg,
+)
 from isaaclab.utils import configclass
 
-from . import mdp
-
-##
-# Pre-defined configs
-##
-
-from isaaclab_assets.robots.cartpole import CARTPOLE_CFG  # isort:skip
+from .field_scene_cfg import TrackSceneCfg
+from .trackpoint_cfg import TrackpointCfg
 
 
-##
-# Scene definition
-##
+# ============================================================
+# 自定义奖励函数（在 mdp/rewards.py 中定义）
+# ============================================================
+# 这里先占位，稍后我们会创建 mdp/rewards.py 文件
+# 现在先定义一个占位函数，让配置能通过
 
 
+def reached_checkpoint(env):
+    """判断是否到达下一个路径点"""
+    # 这个函数会在 mdp/rewards.py 中实现
+    # 现在返回 0 作为占位
+    return 0.0
+
+
+def progress_reward(env):
+    """计算向目标点前进的奖励"""
+    return 0.0
+
+
+def is_completed(env):
+    """判断是否跑完全程"""
+    return False
+
+
+def robot_fallen(env):
+    """判断机器人是否摔倒"""
+    return False
+
+
+# ============================================================
+# 环境配置
+# ============================================================
 @configclass
-class Race400mSceneCfg(InteractiveSceneCfg):
-    """Configuration for a cart-pole scene."""
+class RaceEnvCfg(ManagerBasedRLEnvCfg):
+    """400米竞速环境配置 (Manager-based)"""
 
-    # ground plane
-    ground = AssetBaseCfg(
-        prim_path="/World/ground",
-        spawn=sim_utils.GroundPlaneCfg(size=(100.0, 100.0)),
+    # ============================================================
+    # 1. 场景配置
+    # ============================================================
+    scene: TrackSceneCfg = TrackSceneCfg(num_envs=1, env_spacing=2.0)
+
+    # ============================================================
+    # 2. 观测管理器
+    # ============================================================
+    observations: ObservationManagerCfg = ObservationManagerCfg(
+        policy={
+            "joint_pos": {
+                "func": "isaaclab.managers.ObservationManagerCfg.compute_joint_pos",
+                "params": {"asset_cfg": SceneEntityCfg("robot")},
+                "scale": 1.0,
+            },
+            "joint_vel": {
+                "func": "isaaclab.managers.ObservationManagerCfg.compute_joint_vel",
+                "params": {"asset_cfg": SceneEntityCfg("robot")},
+                "scale": 1.0,
+            },
+            "base_pos": {
+                "func": "isaaclab.managers.ObservationManagerCfg.compute_base_pos",
+                "params": {"asset_cfg": SceneEntityCfg("robot")},
+                "scale": 1.0,
+            },
+            "base_quat": {
+                "func": "isaaclab.managers.ObservationManagerCfg.compute_base_quat",
+                "params": {"asset_cfg": SceneEntityCfg("robot")},
+                "scale": 1.0,
+            },
+            "base_lin_vel": {
+                "func": "isaaclab.managers.ObservationManagerCfg.compute_base_lin_vel",
+                "params": {"asset_cfg": SceneEntityCfg("robot")},
+                "scale": 1.0,
+            },
+            "base_ang_vel": {
+                "func": "isaaclab.managers.ObservationManagerCfg.compute_base_ang_vel",
+                "params": {"asset_cfg": SceneEntityCfg("robot")},
+                "scale": 1.0,
+            },
+        }
     )
 
-    # robot
-    robot: ArticulationCfg = CARTPOLE_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
-
-    # lights
-    dome_light = AssetBaseCfg(
-        prim_path="/World/DomeLight",
-        spawn=sim_utils.DomeLightCfg(color=(0.9, 0.9, 0.9), intensity=500.0),
+    # ============================================================
+    # 3. 动作管理器
+    # ============================================================
+    actions: ActionManagerCfg = ActionManagerCfg(
+        joint_pos={
+            "asset_cfg": SceneEntityCfg("robot"),
+            "scale": 0.5,
+            "offset": 0.0,
+            "joint_names": [".*_joint"],
+        }
     )
 
-
-##
-# MDP settings
-##
-
-
-@configclass
-class ActionsCfg:
-    """Action specifications for the MDP."""
-
-    joint_effort = mdp.JointEffortActionCfg(asset_name="robot", joint_names=["slider_to_cart"], scale=100.0)
-
-
-@configclass
-class ObservationsCfg:
-    """Observation specifications for the MDP."""
-
-    @configclass
-    class PolicyCfg(ObsGroup):
-        """Observations for policy group."""
-
-        # observation terms (order preserved)
-        joint_pos_rel = ObsTerm(func=mdp.joint_pos_rel)
-        joint_vel_rel = ObsTerm(func=mdp.joint_vel_rel)
-
-        def __post_init__(self) -> None:
-            self.enable_corruption = False
-            self.concatenate_terms = True
-
-    # observation groups
-    policy: PolicyCfg = PolicyCfg()
-
-
-@configclass
-class EventCfg:
-    """Configuration for events."""
-
-    # reset
-    reset_cart_position = EventTerm(
-        func=mdp.reset_joints_by_offset,
-        mode="reset",
-        params={
-            "asset_cfg": SceneEntityCfg("robot", joint_names=["slider_to_cart"]),
-            "position_range": (-1.0, 1.0),
-            "velocity_range": (-0.5, 0.5),
-        },
+    # ============================================================
+    # 4. 奖励管理器
+    # ============================================================
+    rewards: RewardManagerCfg = RewardManagerCfg(
+        terms={
+            # 到达路径点奖励
+            "reached_checkpoint": {
+                "func": "race_400m.tasks.manager_based.race_400m.mdp.rewards.reached_checkpoint",
+                "weight": 10.0,
+            },
+            # 向目标点前进奖励
+            "progress": {
+                "func": "race_400m.tasks.manager_based.race_400m.mdp.rewards.progress_reward",
+                "weight": 0.1,
+            },
+            #偏离路径点惩罚
+            "deviation":{
+               "func":"race_400m.tasks.manager_based.race_400m.mdp.rewards.deviation_penalty",
+                "weight":1.0
+            },#后退惩罚
+            "backward":{
+                "func":"race_400m.tasks.manager_based.race_400m.mdp.rewards.backward_penalty",
+                "weight":0.5,
+            },
+            # 存活奖励
+            "alive": {
+                "func": "race_400m.tasks.manager_based.race_400m.mdp.rewards.alive_reward",
+                "weight": 0.01,
+            },
+            #运动奖励
+            "move": {
+                "func": "race_400m.tasks.manager_based.race_400m.mdp.rewards.move_reward",
+                "weight": 0.01,
+            },
+        }
     )
 
-    reset_pole_position = EventTerm(
-        func=mdp.reset_joints_by_offset,
-        mode="reset",
-        params={
-            "asset_cfg": SceneEntityCfg("robot", joint_names=["cart_to_pole"]),
-            "position_range": (-0.25 * math.pi, 0.25 * math.pi),
-            "velocity_range": (-0.25 * math.pi, 0.25 * math.pi),
-        },
+    # ============================================================
+    # 5. 终止管理器
+    # ============================================================
+    terminations: TerminationManagerCfg = TerminationManagerCfg(
+        terms={
+            "timeout": {
+                "func": "isaaclab.managers.TerminationManagerCfg.timeout",
+                "params": {"timeout": 60.0},
+            },
+            "robot_fallen": {
+                "func": "race_400m.tasks.manager_based.race_400m.mdp.terminations.robot_fallen",
+                "params": {"asset_cfg": SceneEntityCfg("robot")},
+            },
+            "completed": {
+                "func": "race_400m.tasks.manager_based.race_400m.mdp.terminations.is_completed",
+                "params": {"asset_cfg": SceneEntityCfg("robot")},
+            },
+        }
     )
 
+    # ============================================================
+    # 6. 仿真参数
+    # ============================================================
+    sim = {
+        "dt": 0.01,
+        "render_interval": 1,
+        "gravity": (0.0, 0.0, -9.81),
+    }
 
-@configclass
-class RewardsCfg:
-    """Reward terms for the MDP."""
+    max_episode_length_s: float = 60.0
+    decimation: int = 4
 
-    # (1) Constant running reward
-    alive = RewTerm(func=mdp.is_alive, weight=1.0)
-    # (2) Failure penalty
-    terminating = RewTerm(func=mdp.is_terminated, weight=-2.0)
-    # (3) Primary task: keep pole upright
-    pole_pos = RewTerm(
-        func=mdp.joint_pos_target_l2,
-        weight=-1.0,
-        params={"asset_cfg": SceneEntityCfg("robot", joint_names=["cart_to_pole"]), "target": 0.0},
-    )
-    # (4) Shaping tasks: lower cart velocity
-    cart_vel = RewTerm(
-        func=mdp.joint_vel_l1,
-        weight=-0.01,
-        params={"asset_cfg": SceneEntityCfg("robot", joint_names=["slider_to_cart"])},
-    )
-    # (5) Shaping tasks: lower pole angular velocity
-    pole_vel = RewTerm(
-        func=mdp.joint_vel_l1,
-        weight=-0.005,
-        params={"asset_cfg": SceneEntityCfg("robot", joint_names=["cart_to_pole"])},
-    )
+    viewer = {
+        "eye": (5.0, 5.0, 5.0),
+        "lookat": (0.0, 0.0, 0.0),
+    }
 
+    # ============================================================
+    # 7. 路径点数据
+    # ============================================================
+    path_points: list = None
+    path_points_tensor: torch.Tensor = None
 
-@configclass
-class TerminationsCfg:
-    """Termination terms for the MDP."""
+    # ============================================================
+    # 8. 初始化方法
+    # ============================================================
+    def __post_init__(self):
+        super().__post_init__()
 
-    # (1) Time out
-    time_out = DoneTerm(func=mdp.time_out, time_out=True)
-    # (2) Cart out of bounds
-    cart_out_of_bounds = DoneTerm(
-        func=mdp.joint_pos_out_of_manual_limit,
-        params={"asset_cfg": SceneEntityCfg("robot", joint_names=["slider_to_cart"]), "bounds": (-3.0, 3.0)},
-    )
+        # 生成路径点
+        track_cfg = TrackpointCfg()
+        self.path_points = track_cfg.path_points
 
+        # 转换为 torch 张量，方便后续计算
+        points_array = np.array(self.path_points)
+        self.path_points_tensor = torch.tensor(points_array, dtype=torch.float32)
 
-##
-# Environment configuration
-##
+        # 注入场景
+        self.scene.path_points = self.path_points
 
+        # 设置机器人初始位置在起点
+        start_x, start_z = self.path_points[0]
+        self.scene.robot.init_state.pos = (start_x, 0.05, start_z)
 
-@configclass
-class Race400mEnvCfg(ManagerBasedRLEnvCfg):
-    # Scene settings
-    scene: Race400mSceneCfg = Race400mSceneCfg(num_envs=4096, env_spacing=4.0)
-    # Basic settings
-    observations: ObservationsCfg = ObservationsCfg()
-    actions: ActionsCfg = ActionsCfg()
-    events: EventCfg = EventCfg()
-    # MDP settings
-    rewards: RewardsCfg = RewardsCfg()
-    terminations: TerminationsCfg = TerminationsCfg()
-
-    # Post initialization
-    def __post_init__(self) -> None:
-        """Post initialization."""
-        # general settings
-        self.decimation = 2
-        self.episode_length_s = 5
-        # viewer settings
-        self.viewer.eye = (8.0, 0.0, 5.0)
-        # simulation settings
-        self.sim.dt = 1 / 120
-        self.sim.render_interval = self.decimation
+        print(f"[INFO] 环境配置加载完成")
+        print(f"[INFO] 路径点数量: {len(self.path_points)}")
+        print(f"[INFO] 起点: ({self.path_points[0][0]:.2f}, {self.path_points[0][1]:.2f})")
+        print(f"[INFO] 终点: ({self.path_points[-1][0]:.2f}, {self.path_points[-1][1]:.2f})")
