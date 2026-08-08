@@ -12,8 +12,7 @@ from isaaclab.managers import (
 )
 from isaaclab.utils import configclass
 
-from .field_scene_cfg import TrackSceneCfg
-from .trackpoint_cfg import TrackpointCfg
+from .track_scene_cfg import TrackSceneCfg, TrackpointCfg
 
 
 # ============================================================

@@ -13,7 +13,7 @@ from . import agents
 
 
 gym.register(
-    id="Template-Race-400m-v0",
+    id="Template-Race-400m",
     entry_point="isaaclab.envs:ManagerBasedRLEnv",
     disable_env_checker=True,
     kwargs={
