@@ -1,0 +1,105 @@
+"""Unitree G1 articulation configuration used by the RL environment."""
+
+from pathlib import Path
+
+import isaaclab.sim as sim_utils
+from isaaclab.actuators import ImplicitActuatorCfg
+from isaaclab.assets import ArticulationCfg
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[4]
+G1_USD_PATH = (
+    PROJECT_ROOT
+    / "unitree_model"
+    / "G1"
+    / "29dof"
+    / "usd"
+    / "g1_29dof_rev_1_0"
+    / "g1_29dof_rev_1_0.usd"
+).as_posix()
+
+
+G1_CONFIG = ArticulationCfg(
+    spawn=sim_utils.UsdFileCfg(
+        usd_path=G1_USD_PATH,
+        rigid_props=sim_utils.RigidBodyPropertiesCfg(
+            disable_gravity=False,
+            max_depenetration_velocity=10.0,
+        ),
+        articulation_props=sim_utils.ArticulationRootPropertiesCfg(
+            enabled_self_collisions=True,
+            solver_position_iteration_count=8,
+        ),
+    ),
+    init_state=ArticulationCfg.InitialStateCfg(
+        pos=(0.0, 0.0, 0.8),
+        joint_pos={
+            "left_hip_pitch_joint": 0.0,
+            "left_hip_roll_joint": 0.0,
+            "left_hip_yaw_joint": 0.0,
+            "left_knee_joint": 0.1,
+            "left_ankle_pitch_joint": 0.0,
+            "left_ankle_roll_joint": 0.0,
+            "right_hip_pitch_joint": 0.0,
+            "right_hip_roll_joint": 0.0,
+            "right_hip_yaw_joint": 0.0,
+            "right_knee_joint": 0.1,
+            "right_ankle_pitch_joint": 0.0,
+            "right_ankle_roll_joint": 0.0,
+            "waist_yaw_joint": 0.0,
+            "waist_roll_joint": 0.0,
+            "waist_pitch_joint": 0.0,
+            "left_shoulder_pitch_joint": 0.0,
+            "left_shoulder_roll_joint": 0.0,
+            "left_shoulder_yaw_joint": 0.0,
+            "left_elbow_joint": 0.0,
+            "left_wrist_roll_joint": 0.0,
+            "left_wrist_pitch_joint": 0.0,
+            "left_wrist_yaw_joint": 0.0,
+            "right_shoulder_pitch_joint": 0.0,
+            "right_shoulder_roll_joint": 0.0,
+            "right_shoulder_yaw_joint": 0.0,
+            "right_elbow_joint": 0.0,
+            "right_wrist_roll_joint": 0.0,
+            "right_wrist_pitch_joint": 0.0,
+            "right_wrist_yaw_joint": 0.0,
+        },
+    ),
+    actuators={
+        "left_leg": ImplicitActuatorCfg(
+            joint_names_expr=["left_hip.*", "left_knee.*", "left_ankle.*"],
+            effort_limit_sim=150.0,
+            velocity_limit_sim=50.0,
+            stiffness=200.0,
+            damping=20.0,
+        ),
+        "right_leg": ImplicitActuatorCfg(
+            joint_names_expr=["right_hip.*", "right_knee.*", "right_ankle.*"],
+            effort_limit_sim=150.0,
+            velocity_limit_sim=50.0,
+            stiffness=200.0,
+            damping=20.0,
+        ),
+        "waist": ImplicitActuatorCfg(
+            joint_names_expr=["waist.*"],
+            effort_limit_sim=100.0,
+            velocity_limit_sim=50.0,
+            stiffness=100.0,
+            damping=10.0,
+        ),
+        "left_arm": ImplicitActuatorCfg(
+            joint_names_expr=["left_shoulder.*", "left_elbow.*", "left_wrist.*"],
+            effort_limit_sim=50.0,
+            velocity_limit_sim=50.0,
+            stiffness=100.0,
+            damping=10.0,
+        ),
+        "right_arm": ImplicitActuatorCfg(
+            joint_names_expr=["right_shoulder.*", "right_elbow.*", "right_wrist.*"],
+            effort_limit_sim=50.0,
+            velocity_limit_sim=50.0,
+            stiffness=100.0,
+            damping=10.0,
+        ),
+    },
+)
