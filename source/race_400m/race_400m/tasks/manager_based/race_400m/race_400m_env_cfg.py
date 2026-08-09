@@ -3,200 +3,133 @@
 import torch
 import numpy as np
 from isaaclab.envs import ManagerBasedRLEnvCfg
-from isaaclab.managers import (
-    ObservationManagerCfg,
-    RewardManagerCfg,
-    TerminationManagerCfg,
-    ActionManagerCfg,
-    SceneEntityCfg,
-)
+from isaaclab.managers import ObservationGroupCfg as ObsGroup
+from isaaclab.managers import ObservationTermCfg as ObsTerm
+from isaaclab.managers import RewardTermCfg as RewTerm
+from isaaclab.managers import TerminationTermCfg as DoneTerm
+from isaaclab.managers import SceneEntityCfg
+from isaaclab.envs.mdp.actions import JointPositionActionCfg
 from isaaclab.utils import configclass
 
 from .track_scene_cfg import TrackSceneCfg, TrackpointCfg
 
-
-# ============================================================
-# 自定义奖励函数（在 mdp/rewards.py 中定义）
-# ============================================================
-# 这里先占位，稍后我们会创建 mdp/rewards.py 文件
-# 现在先定义一个占位函数，让配置能通过
-
-
-def reached_checkpoint(env):
-    """判断是否到达下一个路径点"""
-    # 这个函数会在 mdp/rewards.py 中实现
-    # 现在返回 0 作为占位
-    return 0.0
-
-
-def progress_reward(env):
-    """计算向目标点前进的奖励"""
-    return 0.0
-
-
-def is_completed(env):
-    """判断是否跑完全程"""
-    return False
-
-
-def robot_fallen(env):
-    """判断机器人是否摔倒"""
-    return False
+# 导入自定义 MDP 函数
+from .mdp.rewards import (
+    reached_checkpoint as _reached_checkpoint,
+    progress_reward as _progress_reward,
+    deviation_penalty as _deviation_penalty,
+    backward_penalty as _backward_penalty,
+    alive_reward as _alive_reward,
+    move_reward as _move_reward,
+)
+from .mdp.terminations import (
+    robot_fallen as _robot_fallen,
+    is_completed as _is_completed,
+)
 
 
 # ============================================================
-# 环境配置
+# 1. 观测配置
+# ============================================================
+@configclass
+class ObservationsCfg:
+    """Observation specifications for the MDP."""
+
+    @configclass
+    class PolicyCfg(ObsGroup):
+        """Observations for the policy."""
+
+        joint_pos = ObsTerm(func="isaaclab.envs.mdp:joint_pos_rel", params={"asset_cfg": SceneEntityCfg("robot")})
+        joint_vel = ObsTerm(func="isaaclab.envs.mdp:joint_vel_rel", params={"asset_cfg": SceneEntityCfg("robot")})
+        base_lin_vel = ObsTerm(func="isaaclab.envs.mdp:base_lin_vel", params={"asset_cfg": SceneEntityCfg("robot")})
+        base_ang_vel = ObsTerm(func="isaaclab.envs.mdp:base_ang_vel", params={"asset_cfg": SceneEntityCfg("robot")}, scale=0.25)
+        base_quat = ObsTerm(func="isaaclab.envs.mdp:base_quat", params={"asset_cfg": SceneEntityCfg("robot")})
+        base_height = ObsTerm(func="isaaclab.envs.mdp:base_pos_z", params={"asset_cfg": SceneEntityCfg("robot")})
+
+        def __post_init__(self):
+            self.enable_corruption = False
+            self.concatenate_terms = True
+
+    policy: PolicyCfg = PolicyCfg()
+
+
+# ============================================================
+# 2. 动作配置
+# ============================================================
+@configclass
+class ActionsCfg:
+    """Action specifications for the MDP."""
+
+    joint_pos = JointPositionActionCfg(
+        asset_name="robot",
+        joint_names=[".*_joint"],
+        scale=0.5,
+    )
+
+
+# ============================================================
+# 3. 奖励配置
+# ============================================================
+@configclass
+class RewardsCfg:
+    """Reward terms for the MDP."""
+
+    reached_checkpoint = RewTerm(func=_reached_checkpoint, weight=10.0)
+    progress = RewTerm(func=_progress_reward, weight=0.1)
+    deviation = RewTerm(func=_deviation_penalty, weight=1.0)
+    backward = RewTerm(func=_backward_penalty, weight=0.5)
+    alive = RewTerm(func=_alive_reward, weight=0.01)
+    move = RewTerm(func=_move_reward, weight=0.01)
+
+
+# ============================================================
+# 4. 终止配置
+# ============================================================
+@configclass
+class TerminationsCfg:
+    """Termination terms for the MDP."""
+
+    time_out = DoneTerm(func="isaaclab.envs.mdp:time_out", time_out=True)
+    robot_fallen = DoneTerm(func=_robot_fallen, params={"asset_cfg": SceneEntityCfg("robot")})
+    completed = DoneTerm(func=_is_completed)
+
+
+# ============================================================
+# 5. 环境配置
 # ============================================================
 @configclass
 class RaceEnvCfg(ManagerBasedRLEnvCfg):
     """400米竞速环境配置 (Manager-based)"""
 
-    # ============================================================
-    # 1. 场景配置
-    # ============================================================
+    # 场景配置
     scene: TrackSceneCfg = TrackSceneCfg(num_envs=1, env_spacing=2.0)
 
-    # ============================================================
-    # 2. 观测管理器
-    # ============================================================
-    observations: ObservationManagerCfg = ObservationManagerCfg(
-        policy={
-            "joint_pos": {
-                "func": "isaaclab.envs.mdp:joint_pos",
-                "params": {"asset_cfg": SceneEntityCfg("robot")},
-                "scale": 1.0,
-            },
-            "joint_vel": {
-                "func": "isaaclab.envs.mdp:joint_vel",
-                "params": {"asset_cfg": SceneEntityCfg("robot")},
-                "scale": 1.0,
-            },
-            "base_pos": {
-                "func": "isaaclab.envs.mdp:base_pos",
-                "params": {"asset_cfg": SceneEntityCfg("robot")},
-                "scale": 1.0,
-            },
-            "base_quat": {
-                "func": "isaaclab.envs.mdp:base_quat",
-                "params": {"asset_cfg": SceneEntityCfg("robot")},
-                "scale": 1.0,
-            },
-            "base_lin_vel": {
-                "func": "isaaclab.envs.mdp:base_lin_vel",
-                "params": {"asset_cfg": SceneEntityCfg("robot")},
-                "scale": 1.0,
-            },
-            "base_ang_vel": {
-                "func": "isaaclab.envs.mdp:base_ang_vel",
-                "params": {"asset_cfg": SceneEntityCfg("robot")},
-                "scale": 1.0,
-            },
-        }
-    )
+    # MDP 配置
+    observations: ObservationsCfg = ObservationsCfg()
+    actions: ActionsCfg = ActionsCfg()
+    rewards: RewardsCfg = RewardsCfg()
+    terminations: TerminationsCfg = TerminationsCfg()
 
-    # ============================================================
-    # 3. 动作管理器
-    # ============================================================
-    actions: ActionManagerCfg = ActionManagerCfg(
-        joint_pos={
-            "asset_cfg": SceneEntityCfg("robot"),
-            "scale": 0.5,
-            "offset": 0.0,
-            "joint_names": [".*_joint"],
-        }
-    )
-
-    # ============================================================
-    # 4. 奖励管理器
-    # ============================================================
-    rewards: RewardManagerCfg = RewardManagerCfg(
-        terms={
-            # 到达路径点奖励
-            "reached_checkpoint": {
-                "func": "race_400m.tasks.manager_based.race_400m.mdp.rewards.reached_checkpoint",
-                "weight": 10.0,
-            },
-            # 向目标点前进奖励
-            "progress": {
-                "func": "race_400m.tasks.manager_based.race_400m.mdp.rewards.progress_reward",
-                "weight": 0.1,
-            },
-            #偏离路径点惩罚
-            "deviation":{
-               "func":"race_400m.tasks.manager_based.race_400m.mdp.rewards.deviation_penalty",
-                "weight":1.0
-            },#后退惩罚
-            "backward":{
-                "func":"race_400m.tasks.manager_based.race_400m.mdp.rewards.backward_penalty",
-                "weight":0.5,
-            },
-            # 存活奖励
-            "alive": {
-                "func": "race_400m.tasks.manager_based.race_400m.mdp.rewards.alive_reward",
-                "weight": 0.01,
-            },
-            #运动奖励
-            "move": {
-                "func": "race_400m.tasks.manager_based.race_400m.mdp.rewards.move_reward",
-                "weight": 0.01,
-            },
-        }
-    )
-
-    # ============================================================
-    # 5. 终止管理器
-    # ============================================================
-    terminations: TerminationManagerCfg = TerminationManagerCfg(
-        terms={
-            "timeout": {
-                "func": "isaaclab.envs.mdp:time_out",
-                "params": {"timeout": 60.0},
-            },
-            "robot_fallen": {
-                "func": "race_400m.tasks.manager_based.race_400m.mdp.terminations.robot_fallen",
-                "params": {"asset_cfg": SceneEntityCfg("robot")},
-            },
-            "completed": {
-                "func": "race_400m.tasks.manager_based.race_400m.mdp.terminations.is_completed",
-                "params": {"asset_cfg": SceneEntityCfg("robot")},
-            },
-        }
-    )
-
-    # ============================================================
-    # 6. 仿真参数
-    # ============================================================
-    sim = {
-        "dt": 0.01,
-        "render_interval": 1,
-        "gravity": (0.0, 0.0, -9.81),
-    }
-
-    max_episode_length_s: float = 60.0
+    # 仿真参数
     decimation: int = 4
+    episode_length_s: float = 60.0
 
-    viewer = {
-        "eye": (5.0, 5.0, 5.0),
-        "lookat": (0.0, 0.0, 0.0),
-    }
-
-    # ============================================================
-    # 7. 路径点数据
-    # ============================================================
+    # 路径点数据
     path_points: list = None
     path_points_tensor: torch.Tensor = None
 
-    # ============================================================
-    # 8. 初始化方法
-    # ============================================================
     def __post_init__(self):
         super().__post_init__()
+
+        # 仿真步长
+        self.sim.dt = 0.01
+        self.sim.render_interval = self.decimation
 
         # 生成路径点
         track_cfg = TrackpointCfg()
         self.path_points = track_cfg.path_points
 
-        # 转换为 torch 张量，方便后续计算
+        # 转换为 torch 张量
         points_array = np.array(self.path_points)
         self.path_points_tensor = torch.tensor(points_array, dtype=torch.float32)
 
