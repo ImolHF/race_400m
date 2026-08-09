@@ -4,7 +4,7 @@ import numpy as np
 def robot_fallen(env,asset_cfg=None):
     robot = env.scene['robot']
     robot_pos=robot.data.root_pos_w[0]
-    height=robot_pos[1]
+    height=robot_pos[1].item()
     if height<0.2:
         print(f"[INFO]机器人摔倒，高度{height}")
         return torch.tensor(True, device=env.device)

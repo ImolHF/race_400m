@@ -76,7 +76,7 @@ def backward_penalty(env):
     vec_target = (target_x - pos_x, target_z - pos_z)
     vec_vel = (vel_x, vel_z)
     dot=np.dot(vec_target,vec_vel)
-    cos=np.dot(vec_target,vec_vel)/speed*dist
+    cos=dot/(speed*dist)
     if cos<-0.3:
         penalty=-0.2
         return torch.tensor(penalty, device=env.device)
@@ -100,8 +100,8 @@ def deviation_penalty(env):
         dist=np.sqrt((pos_x-x)**2+(pos_z-z)**2)
         if dist<min_dist:
             min_dist=dist
-    if min_dist<1.2:
-        penalty=-0.1*(min_dist-1.2)
+    if min_dist>1.0:
+        penalty=-0.1*(min_dist-1.0)
         return torch.tensor(penalty, device=env.device)
     return torch.tensor(0.0, device=env.device)
 

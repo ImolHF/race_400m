@@ -62,32 +62,32 @@ class RaceEnvCfg(ManagerBasedRLEnvCfg):
     observations: ObservationManagerCfg = ObservationManagerCfg(
         policy={
             "joint_pos": {
-                "func": "isaaclab.managers.ObservationManagerCfg.compute_joint_pos",
+                "func": "isaaclab.envs.mdp:joint_pos",
                 "params": {"asset_cfg": SceneEntityCfg("robot")},
                 "scale": 1.0,
             },
             "joint_vel": {
-                "func": "isaaclab.managers.ObservationManagerCfg.compute_joint_vel",
+                "func": "isaaclab.envs.mdp:joint_vel",
                 "params": {"asset_cfg": SceneEntityCfg("robot")},
                 "scale": 1.0,
             },
             "base_pos": {
-                "func": "isaaclab.managers.ObservationManagerCfg.compute_base_pos",
+                "func": "isaaclab.envs.mdp:base_pos",
                 "params": {"asset_cfg": SceneEntityCfg("robot")},
                 "scale": 1.0,
             },
             "base_quat": {
-                "func": "isaaclab.managers.ObservationManagerCfg.compute_base_quat",
+                "func": "isaaclab.envs.mdp:base_quat",
                 "params": {"asset_cfg": SceneEntityCfg("robot")},
                 "scale": 1.0,
             },
             "base_lin_vel": {
-                "func": "isaaclab.managers.ObservationManagerCfg.compute_base_lin_vel",
+                "func": "isaaclab.envs.mdp:base_lin_vel",
                 "params": {"asset_cfg": SceneEntityCfg("robot")},
                 "scale": 1.0,
             },
             "base_ang_vel": {
-                "func": "isaaclab.managers.ObservationManagerCfg.compute_base_ang_vel",
+                "func": "isaaclab.envs.mdp:base_ang_vel",
                 "params": {"asset_cfg": SceneEntityCfg("robot")},
                 "scale": 1.0,
             },
@@ -149,7 +149,7 @@ class RaceEnvCfg(ManagerBasedRLEnvCfg):
     terminations: TerminationManagerCfg = TerminationManagerCfg(
         terms={
             "timeout": {
-                "func": "isaaclab.managers.TerminationManagerCfg.timeout",
+                "func": "isaaclab.envs.mdp:time_out",
                 "params": {"timeout": 60.0},
             },
             "robot_fallen": {
