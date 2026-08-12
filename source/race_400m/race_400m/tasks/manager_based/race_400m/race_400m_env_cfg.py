@@ -37,6 +37,7 @@ class ObservationsCfg:
         base_lin_vel = ObsTerm(func="isaaclab.envs.mdp:base_lin_vel", params={"asset_cfg": SceneEntityCfg("robot")})
         base_ang_vel = ObsTerm(func="isaaclab.envs.mdp:base_ang_vel", params={"asset_cfg": SceneEntityCfg("robot")}, scale=0.25)
         projected_gravity = ObsTerm(func="isaaclab.envs.mdp:projected_gravity", params={"asset_cfg": SceneEntityCfg("robot")})
+        previous_action = ObsTerm(func="isaaclab.envs.mdp:last_action")
         target_direction = ObsTerm(func=_target_direction)
         target_distance = ObsTerm(func=_target_distance)
 
@@ -66,17 +67,19 @@ class ActionsCfg:
 
 @configclass
 class RewardsCfg:
-    reached_checkpoint = RewTerm(func=_reached_checkpoint, weight=5.0)
+    # The order is important. Progress must be evaluated before checkpoint
+    # advancement resets the potential for the next target.
     progress = RewTerm(func=_progress_reward, weight=8.0)
+    reached_checkpoint = RewTerm(func=_reached_checkpoint, weight=5.0)
     alignment = RewTerm(func=_alignment_reward, weight=0.75)
     deviation = RewTerm(func=_deviation_penalty, weight=0.5)
     alive = RewTerm(func=_alive_reward, weight=0.02)
     # Stability and smoothness terms are essential when learning bipedal
     # locomotion from scratch.  The task terms above alone reward any brief
     # forward motion, including a forward fall.
-    termination_penalty = RewTerm(func=isaac_mdp.is_terminated, weight=-25.0)
+    termination_penalty = RewTerm(func=isaac_mdp.is_terminated, weight=-100.0)
     flat_orientation = RewTerm(func=isaac_mdp.flat_orientation_l2, weight=-2.0)
-    base_height = RewTerm(func=isaac_mdp.base_height_l2, weight=-8.0, params={"target_height": 0.8})
+    base_height = RewTerm(func=isaac_mdp.base_height_l2, weight=-8.0, params={"target_height": 0.74})
     lin_vel_z = RewTerm(func=isaac_mdp.lin_vel_z_l2, weight=-1.0)
     ang_vel_xy = RewTerm(func=isaac_mdp.ang_vel_xy_l2, weight=-0.1)
     joint_vel = RewTerm(func=isaac_mdp.joint_vel_l2, weight=-2.0e-4)
@@ -103,7 +106,7 @@ class TerminationsCfg:
 class RaceEnvCfg(ManagerBasedRLEnvCfg):
     """Fixed target-point navigation task for the G1 robot."""
 
-    scene: TrackSceneCfg = TrackSceneCfg(num_envs=16, env_spacing=2.5)
+    scene: TrackSceneCfg = TrackSceneCfg(num_envs=1024, env_spacing=2.5)
     observations: ObservationsCfg = ObservationsCfg()
     actions: ActionsCfg = ActionsCfg()
     rewards: RewardsCfg = RewardsCfg()

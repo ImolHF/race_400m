@@ -58,11 +58,22 @@ def target_distance(env) -> torch.Tensor:
 
 
 def reached_checkpoint(env, threshold: float = 1.0) -> torch.Tensor:
-    """Advance exactly one target when the active target is reached."""
+    """Advance one target after reaching or safely passing it.
+
+    The pass test prevents a running robot from getting stuck when its root
+    crosses a 2 m-spaced target between two control updates.
+    """
     position_local, targets, displacement_xy = _target_data(env)
     distance = torch.linalg.vector_norm(displacement_xy, dim=-1)
     active = env._next_target_idx < len(env.cfg.path_points)
-    reached = active & (distance < threshold)
+    previous_indices = (env._next_target_idx - 1).clamp_min(0)
+    previous_targets = env._track_points[previous_indices]
+    segment = targets - previous_targets
+    segment_length = torch.linalg.vector_norm(segment, dim=-1).clamp_min(1.0e-6)
+    passed_distance = ((position_local - targets) * segment).sum(dim=-1) / segment_length
+    lateral_error = torch.abs((position_local - targets)[:, 0] * segment[:, 1] - (position_local - targets)[:, 1] * segment[:, 0]) / segment_length
+    passed = (passed_distance > 0.0) & (lateral_error < 1.25)
+    reached = active & ((distance < threshold) | passed)
     env._next_target_idx = torch.where(reached, env._next_target_idx + 1, env._next_target_idx)
 
     # A new target has a larger distance.  Reset its progress baseline so the

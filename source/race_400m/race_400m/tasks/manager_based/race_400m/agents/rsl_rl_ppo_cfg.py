@@ -10,24 +10,24 @@ from isaaclab_rl.rsl_rl import RslRlOnPolicyRunnerCfg, RslRlPpoActorCriticCfg, R
 
 @configclass
 class PPORunnerCfg(RslRlOnPolicyRunnerCfg):
-    num_steps_per_env = 48
-    max_iterations = 1000
+    num_steps_per_env = 24
+    max_iterations = 5000
     save_interval = 50
     experiment_name = "g1_track_400m"
-    empirical_normalization = True
+    empirical_normalization = False
     policy = RslRlPpoActorCriticCfg(
         # Conservative exploration is important for position-controlled
         # humanoid joints; 1.0 produced full-scale random residuals at reset.
         init_noise_std=0.5,
-        actor_hidden_dims=[256, 128, 64],
-        critic_hidden_dims=[256, 128, 64],
+        actor_hidden_dims=[512, 256, 128],
+        critic_hidden_dims=[512, 256, 128],
         activation="elu",
     )
     algorithm = RslRlPpoAlgorithmCfg(
         value_loss_coef=1.0,
         use_clipped_value_loss=True,
         clip_param=0.2,
-        entropy_coef=0.005,
+        entropy_coef=0.008,
         num_learning_epochs=5,
         num_mini_batches=4,
         learning_rate=5.0e-4,
