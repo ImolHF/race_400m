@@ -20,8 +20,15 @@ def reset_path_progress(env, env_ids: torch.Tensor | None) -> None:
     _ensure_navigation_state(env)
     if env_ids is None:
         env_ids = torch.arange(env.num_envs, device=env.device)
-    env._next_target_idx[env_ids] = 0
-    env._previous_target_distance[env_ids] = 0.0
+    # Target zero is the robot's reset position.  Starting at target one avoids
+    # granting a checkpoint reward before the policy has taken an action.
+    env._next_target_idx[env_ids] = 1
+    robot = env.scene["robot"]
+    position_local = robot.data.root_pos_w[env_ids, :2] - env.scene.env_origins[env_ids, :2]
+    target = env._track_points[1]
+    # Initialize the potential with the actual reset distance.  A zero
+    # baseline suppresses all positive progress reward until a checkpoint.
+    env._previous_target_distance[env_ids] = torch.linalg.vector_norm(target - position_local, dim=-1)
 
 
 def _target_data(env) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:

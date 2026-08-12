@@ -49,23 +49,39 @@ class ObservationsCfg:
 
 @configclass
 class ActionsCfg:
-    """Joint-position residual actions about G1's configured default pose."""
+    """Leg-only residual actions about G1's configured default standing pose.
+
+    Keeping the torso and arms at their default targets makes the initial
+    locomotion problem tractable: the policy first learns balance and stepping
+    instead of exploiting large upper-body motions.
+    """
 
     joint_pos = JointPositionActionCfg(
         asset_name="robot",
-        joint_names=[".*_joint"],
-        scale=0.5,
+        joint_names=[".*_hip_.*", ".*_knee_joint", ".*_ankle_.*"],
+        scale=0.25,
         use_default_offset=True,
     )
 
 
 @configclass
 class RewardsCfg:
-    reached_checkpoint = RewTerm(func=_reached_checkpoint, weight=10.0)
-    progress = RewTerm(func=_progress_reward, weight=5.0)
-    alignment = RewTerm(func=_alignment_reward, weight=0.5)
+    reached_checkpoint = RewTerm(func=_reached_checkpoint, weight=5.0)
+    progress = RewTerm(func=_progress_reward, weight=8.0)
+    alignment = RewTerm(func=_alignment_reward, weight=0.75)
     deviation = RewTerm(func=_deviation_penalty, weight=0.5)
     alive = RewTerm(func=_alive_reward, weight=0.02)
+    # Stability and smoothness terms are essential when learning bipedal
+    # locomotion from scratch.  The task terms above alone reward any brief
+    # forward motion, including a forward fall.
+    termination_penalty = RewTerm(func=isaac_mdp.is_terminated, weight=-25.0)
+    flat_orientation = RewTerm(func=isaac_mdp.flat_orientation_l2, weight=-2.0)
+    base_height = RewTerm(func=isaac_mdp.base_height_l2, weight=-8.0, params={"target_height": 0.8})
+    lin_vel_z = RewTerm(func=isaac_mdp.lin_vel_z_l2, weight=-1.0)
+    ang_vel_xy = RewTerm(func=isaac_mdp.ang_vel_xy_l2, weight=-0.1)
+    joint_vel = RewTerm(func=isaac_mdp.joint_vel_l2, weight=-2.0e-4)
+    action_rate = RewTerm(func=isaac_mdp.action_rate_l2, weight=-0.01)
+    joint_pos_limits = RewTerm(func=isaac_mdp.joint_pos_limits, weight=-2.0)
 
 
 @configclass

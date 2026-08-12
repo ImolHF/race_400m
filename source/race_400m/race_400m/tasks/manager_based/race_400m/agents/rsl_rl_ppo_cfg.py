@@ -16,7 +16,9 @@ class PPORunnerCfg(RslRlOnPolicyRunnerCfg):
     experiment_name = "g1_track_400m"
     empirical_normalization = True
     policy = RslRlPpoActorCriticCfg(
-        init_noise_std=1.0,
+        # Conservative exploration is important for position-controlled
+        # humanoid joints; 1.0 produced full-scale random residuals at reset.
+        init_noise_std=0.5,
         actor_hidden_dims=[256, 128, 64],
         critic_hidden_dims=[256, 128, 64],
         activation="elu",
@@ -28,7 +30,7 @@ class PPORunnerCfg(RslRlOnPolicyRunnerCfg):
         entropy_coef=0.005,
         num_learning_epochs=5,
         num_mini_batches=4,
-        learning_rate=1.0e-3,
+        learning_rate=5.0e-4,
         schedule="adaptive",
         gamma=0.99,
         lam=0.95,
