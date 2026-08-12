@@ -106,7 +106,11 @@ class TerminationsCfg:
 class RaceEnvCfg(ManagerBasedRLEnvCfg):
     """Fixed target-point navigation task for the G1 robot."""
 
-    scene: TrackSceneCfg = TrackSceneCfg(num_envs=1024, env_spacing=2.5)
+    # This is the number of environments *per GPU*.  The six-GPU training
+    # command therefore collects 6 * 2048 = 12,288 environments per update.
+    # Keep this value conservative enough for reliable PhysX startup; override
+    # it with --num_envs only after verifying headroom on the target server.
+    scene: TrackSceneCfg = TrackSceneCfg(num_envs=2048, env_spacing=2.5)
     observations: ObservationsCfg = ObservationsCfg()
     actions: ActionsCfg = ActionsCfg()
     rewards: RewardsCfg = RewardsCfg()
