@@ -85,7 +85,10 @@ logs/rsl_rl/g1_track_400m/<timestamp>_race_from_scratch/
 If you already have a checkpoint that completes the lap, fine-tune it instead
 of training from scratch. The current task adds official-G1-style gait shaping:
 hip yaw/roll deviation, joint acceleration/torque penalties, biped air-time,
-and foot-slide penalties. The 200-point logic is unchanged.
+and foot-slide penalties. It also adapts the phase-based alternating-contact
+and swing-foot-clearance terms used by Unitree RL Lab and Unitree RL Mjlab,
+then adds a yaw-frame crossed-feet penalty. The 200-point logic, policy
+observation size (82), and 12-leg-joint action space are unchanged.
 
 First list prior runs:
 
@@ -126,6 +129,21 @@ Key metrics:
 - `Episode_Termination/robot_fallen`: should decrease during gait fine-tuning.
 - `Episode_Reward/feet_slide`, `hip_deviation`, and `action_rate`: use them to
   compare gait quality across checkpoints, not as stand-alone success metrics.
+- `Episode_Reward/alternating_gait`, `swing_clearance`, and `crossed_feet`:
+  new gait-quality terms. They should improve without a material reduction in
+  checkpoint rewards or full-lap completion.
+
+## References used for gait shaping
+
+- [Unitree RL Lab](https://github.com/unitreerobotics/unitree_rl_lab):
+  phase-based left/right contact schedule and foot-clearance shaping.
+- [Unitree RL Gym](https://github.com/unitreerobotics/unitree_rl_gym): G1
+  12-leg-joint control scale and conservative gait/stability regularization.
+- [Unitree RL Mjlab](https://github.com/unitreerobotics/unitree_rl_mjlab):
+  contact-gated swing-foot clearance and tighter hip roll/yaw treatment.
+
+Only compatible reward concepts were adapted. No external policy checkpoint,
+29-DoF action convention, or MuJoCo-specific runtime code is used.
 
 ## Safety and scope
 

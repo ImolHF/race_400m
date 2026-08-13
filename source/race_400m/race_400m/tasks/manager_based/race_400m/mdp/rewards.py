@@ -133,3 +133,58 @@ def feet_air_time_positive_biped(env, threshold: float, sensor_cfg: SceneEntityC
     reward = torch.clamp(reward, max=threshold)
     moving = torch.linalg.vector_norm(env.scene["robot"].data.root_lin_vel_w[:, :2], dim=-1) > 0.1
     return reward * moving
+
+
+def alternating_foot_gait(
+    env, period: float, offset: tuple[float, float], threshold: float, sensor_cfg: SceneEntityCfg
+) -> torch.Tensor:
+    """Reward an alternating left/right contact schedule while the robot moves.
+
+    Adapted from the phase-based G1 gait reward in Unitree RL Lab and the
+    equivalent Mjlab implementation.  The phase is local to each environment,
+    so parallel resets do not couple robots to one another.
+    """
+    contact_sensor: ContactSensor = env.scene.sensors[sensor_cfg.name]
+    in_contact = contact_sensor.data.current_contact_time[:, sensor_cfg.body_ids] > 0.0
+    phase = ((env.episode_length_buf * env.step_dt) / period).unsqueeze(1)
+    offsets = torch.tensor(offset, dtype=phase.dtype, device=env.device).view(1, -1)
+    stance_expected = ((phase + offsets) % 1.0) < threshold
+    match = (stance_expected == in_contact).float().mean(dim=1)
+    moving = torch.linalg.vector_norm(env.scene["robot"].data.root_lin_vel_w[:, :2], dim=-1) > 0.1
+    return match * moving
+
+
+def swing_foot_clearance(
+    env, target_height: float, sensor_cfg: SceneEntityCfg, asset_cfg: SceneEntityCfg
+) -> torch.Tensor:
+    """Reward airborne ankle-roll links reaching a modest, repeatable clearance.
+
+    This is the contact-gated form of the foot-clearance shaping used in
+    Unitree RL Lab/Mjlab.  Grounded feet are excluded so the policy does not
+    learn to pull both feet upward together.
+    """
+    contact_sensor: ContactSensor = env.scene.sensors[sensor_cfg.name]
+    robot = env.scene[asset_cfg.name]
+    in_air = contact_sensor.data.current_contact_time[:, sensor_cfg.body_ids] <= 0.0
+    height = robot.data.body_pos_w[:, asset_cfg.body_ids, 2]
+    planar_speed = torch.linalg.vector_norm(robot.data.body_lin_vel_w[:, asset_cfg.body_ids, :2], dim=-1)
+    height_error = torch.square(height - target_height)
+    reward = torch.exp(-height_error / 0.05**2) * torch.tanh(2.0 * planar_speed) * in_air
+    moving = torch.linalg.vector_norm(robot.data.root_lin_vel_w[:, :2], dim=-1) > 0.1
+    return reward.sum(dim=1) * moving
+
+
+def crossed_feet_penalty(env, min_half_width: float, asset_cfg: SceneEntityCfg) -> torch.Tensor:
+    """Penalize feet entering the wrong side of the robot's yaw frame.
+
+    The left ankle must remain left of the sagittal plane and the right ankle
+    right of it.  It targets cross-stepping without imposing a fixed stride
+    length or changing the ordered waypoint objective.
+    """
+    robot = env.scene[asset_cfg.name]
+    foot_offset_w = robot.data.body_pos_w[:, asset_cfg.body_ids] - robot.data.root_pos_w.unsqueeze(1)
+    yaw = yaw_quat(robot.data.root_quat_w)
+    foot_offset_b = quat_apply_inverse(yaw.unsqueeze(1).expand(-1, foot_offset_w.shape[1], -1).reshape(-1, 4), foot_offset_w.reshape(-1, 3))
+    foot_y_b = foot_offset_b.reshape(env.num_envs, -1, 3)[:, :, 1]
+    # body_names are configured left then right below.
+    return (min_half_width - foot_y_b[:, 0]).clamp_min(0.0) + (min_half_width + foot_y_b[:, 1]).clamp_min(0.0)

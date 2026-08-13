@@ -16,12 +16,15 @@ from .mdp.rewards import (
     alignment_reward as _alignment_reward,
     alive_reward as _alive_reward,
     deviation_penalty as _deviation_penalty,
+    alternating_foot_gait as _alternating_foot_gait,
+    crossed_feet_penalty as _crossed_feet_penalty,
     feet_air_time_positive_biped as _feet_air_time_positive_biped,
     progress_reward as _progress_reward,
     reached_checkpoint as _reached_checkpoint,
     reset_path_progress as _reset_path_progress,
     target_direction as _target_direction,
     target_distance as _target_distance,
+    swing_foot_clearance as _swing_foot_clearance,
 )
 from .mdp.terminations import is_completed as _is_completed
 from .mdp.terminations import robot_fallen as _robot_fallen
@@ -119,6 +122,42 @@ class RewardsCfg:
         params={
             "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_ankle_roll_link"),
             "asset_cfg": SceneEntityCfg("robot", body_names=".*_ankle_roll_link"),
+        },
+    )
+    # Unitree RL Lab and Unitree RL Mjlab both use an explicit alternating
+    # contact schedule and swing-foot clearance for G1.  The terms below are
+    # adapted to this task's waypoint-driven movement gate.
+    alternating_gait = RewTerm(
+        func=_alternating_foot_gait,
+        weight=0.15,
+        params={
+            "period": 0.8,
+            "offset": (0.0, 0.5),
+            "threshold": 0.55,
+            "sensor_cfg": SceneEntityCfg(
+                "contact_forces", body_names=["left_ankle_roll_link", "right_ankle_roll_link"]
+            ),
+        },
+    )
+    swing_clearance = RewTerm(
+        func=_swing_foot_clearance,
+        weight=0.08,
+        params={
+            "target_height": 0.10,
+            "sensor_cfg": SceneEntityCfg(
+                "contact_forces", body_names=["left_ankle_roll_link", "right_ankle_roll_link"]
+            ),
+            "asset_cfg": SceneEntityCfg("robot", body_names=["left_ankle_roll_link", "right_ankle_roll_link"]),
+        },
+    )
+    # This directly addresses the observed cross-step while preserving the
+    # source projects' preference for symmetric alternating contacts.
+    crossed_feet = RewTerm(
+        func=_crossed_feet_penalty,
+        weight=-0.5,
+        params={
+            "min_half_width": 0.04,
+            "asset_cfg": SceneEntityCfg("robot", body_names=["left_ankle_roll_link", "right_ankle_roll_link"]),
         },
     )
 
