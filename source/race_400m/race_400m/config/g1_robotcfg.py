@@ -22,6 +22,8 @@ G1_USD_PATH = (
 G1_CONFIG = ArticulationCfg(
     spawn=sim_utils.UsdFileCfg(
         usd_path=G1_USD_PATH,
+        # Required for the GPU contact sensor used by gait-shaping rewards.
+        activate_contact_sensors=True,
         rigid_props=sim_utils.RigidBodyPropertiesCfg(
             disable_gravity=False,
             max_depenetration_velocity=10.0,

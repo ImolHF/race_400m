@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import torch
 
+from isaaclab.managers import SceneEntityCfg
+from isaaclab.sensors import ContactSensor
 from isaaclab.utils.math import quat_apply_inverse, yaw_quat
 
 
@@ -113,3 +115,21 @@ def deviation_penalty(env) -> torch.Tensor:
 
 def alive_reward(env) -> torch.Tensor:
     return torch.ones(env.num_envs, dtype=torch.float32, device=env.device)
+
+
+def feet_air_time_positive_biped(env, threshold: float, sensor_cfg: SceneEntityCfg) -> torch.Tensor:
+    """Official G1 biped air-time shaping adapted to direct waypoint navigation.
+
+    The velocity task gates this reward using its velocity command.  This task
+    has no command manager, so actual planar root speed is used instead.
+    """
+    contact_sensor: ContactSensor = env.scene.sensors[sensor_cfg.name]
+    air_time = contact_sensor.data.current_air_time[:, sensor_cfg.body_ids]
+    contact_time = contact_sensor.data.current_contact_time[:, sensor_cfg.body_ids]
+    in_contact = contact_time > 0.0
+    in_mode_time = torch.where(in_contact, contact_time, air_time)
+    single_stance = torch.sum(in_contact.int(), dim=1) == 1
+    reward = torch.min(torch.where(single_stance.unsqueeze(-1), in_mode_time, 0.0), dim=1)[0]
+    reward = torch.clamp(reward, max=threshold)
+    moving = torch.linalg.vector_norm(env.scene["robot"].data.root_lin_vel_w[:, :2], dim=-1) > 0.1
+    return reward * moving

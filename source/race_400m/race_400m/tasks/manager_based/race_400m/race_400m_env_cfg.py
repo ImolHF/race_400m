@@ -10,11 +10,13 @@ from isaaclab.managers import RewardTermCfg as RewTerm
 from isaaclab.managers import SceneEntityCfg
 from isaaclab.managers import TerminationTermCfg as DoneTerm
 from isaaclab.utils import configclass
+from isaaclab_tasks.manager_based.locomotion.velocity import mdp as velocity_mdp
 
 from .mdp.rewards import (
     alignment_reward as _alignment_reward,
     alive_reward as _alive_reward,
     deviation_penalty as _deviation_penalty,
+    feet_air_time_positive_biped as _feet_air_time_positive_biped,
     progress_reward as _progress_reward,
     reached_checkpoint as _reached_checkpoint,
     reset_path_progress as _reset_path_progress,
@@ -86,6 +88,40 @@ class RewardsCfg:
     action_rate = RewTerm(func=isaac_mdp.action_rate_l2, weight=-0.01)
     joint_pos_limits = RewTerm(func=isaac_mdp.joint_pos_limits, weight=-2.0)
 
+    # Imported from Isaac Lab's official G1 velocity task.  These shape the
+    # gait only; all waypoint, progress, and completion rewards stay intact.
+    hip_deviation = RewTerm(
+        func=isaac_mdp.joint_deviation_l1,
+        weight=-0.08,
+        params={"asset_cfg": SceneEntityCfg("robot", joint_names=[".*_hip_yaw_joint", ".*_hip_roll_joint"])},
+    )
+    joint_acc = RewTerm(
+        func=isaac_mdp.joint_acc_l2,
+        weight=-1.0e-7,
+        params={"asset_cfg": SceneEntityCfg("robot", joint_names=[".*_hip_.*", ".*_knee_joint"])},
+    )
+    joint_torques = RewTerm(
+        func=isaac_mdp.joint_torques_l2,
+        weight=-2.0e-6,
+        params={"asset_cfg": SceneEntityCfg("robot", joint_names=[".*_hip_.*", ".*_knee_joint", ".*_ankle_.*"])},
+    )
+    feet_air_time = RewTerm(
+        func=_feet_air_time_positive_biped,
+        weight=0.5,
+        params={
+            "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_ankle_roll_link"),
+            "threshold": 0.4,
+        },
+    )
+    feet_slide = RewTerm(
+        func=velocity_mdp.feet_slide,
+        weight=-0.08,
+        params={
+            "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_ankle_roll_link"),
+            "asset_cfg": SceneEntityCfg("robot", body_names=".*_ankle_roll_link"),
+        },
+    )
+
 
 @configclass
 class EventsCfg:
@@ -137,6 +173,8 @@ class RaceEnvCfg(ManagerBasedRLEnvCfg):
         self.sim.physx.gpu_heap_capacity = 2**28
         self.sim.physx.gpu_temp_buffer_capacity = 2**26
         self.sim.physx.gpu_max_num_partitions = 32
+        # Keep contact history in sync with the physics step for gait rewards.
+        self.scene.contact_forces.update_period = self.sim.dt
 
         track_cfg = TrackpointCfg()
         self.path_points = track_cfg.path_points
