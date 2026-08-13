@@ -1,135 +1,135 @@
-# Template for Isaac Lab Projects
+# G1 400 m Ordered-Waypoint Race
 
-## Overview
+Train a Unitree G1 to complete one 400 m lap by passing fixed, ordered
+ground-plane targets.  The course contains 201 coordinates: the 0 m start plus
+one target every 2 m through 400 m.  The policy has no camera, LiDAR, or map
+input.  It receives proprioception and the direction/distance to the next
+target, and outputs 12 leg joint-position residual actions.
 
-This project/repository serves as a template for building projects or extensions based on Isaac Lab.
-It allows you to develop in an isolated environment, outside of the core Isaac Lab repository.
-
-**Key Features:**
-
-- `Isolation` Work outside the core Isaac Lab repository, ensuring that your development efforts remain self-contained.
-- `Flexibility` This template is set up to allow your code to be run as an extension in Omniverse.
-
-**Keywords:** extension, template, isaaclab
-
-## Installation
-
-- Install Isaac Lab by following the [installation guide](https://isaac-sim.github.io/IsaacLab/main/source/setup/installation/index.html).
-  We recommend using the conda installation as it simplifies calling Python scripts from the terminal.
-
-- Clone or copy this project/repository separately from the Isaac Lab installation (i.e. outside the `IsaacLab` directory):
-
-- Using a python interpreter that has Isaac Lab installed, install the library in editable mode using:
-
-    ```bash
-    # use 'PATH_TO_isaaclab.sh|bat -p' instead of 'python' if Isaac Lab is not installed in Python venv or conda
-    python -m pip install -e source/race_400m
-
-- Verify that the extension is correctly installed by:
-
-    - Listing the available tasks:
-
-        Note: It the task name changes, it may be necessary to update the search pattern `"Template-"`
-        (in the `scripts/list_envs.py` file) so that it can be listed.
-
-        ```bash
-        # use 'FULL_PATH_TO_isaaclab.sh|bat -p' instead of 'python' if Isaac Lab is not installed in Python venv or conda
-        python scripts/list_envs.py
-        ```
-
-    - Running a task:
-
-        ```bash
-        # use 'FULL_PATH_TO_isaaclab.sh|bat -p' instead of 'python' if Isaac Lab is not installed in Python venv or conda
-        python scripts/<RL_LIBRARY>/train.py --task=<TASK_NAME>
-        ```
-
-    - Running a task with dummy agents:
-
-        These include dummy agents that output zero or random agents. They are useful to ensure that the environments are configured correctly.
-
-        - Zero-action agent
-
-            ```bash
-            # use 'FULL_PATH_TO_isaaclab.sh|bat -p' instead of 'python' if Isaac Lab is not installed in Python venv or conda
-            python scripts/zero_agent.py --task=<TASK_NAME>
-            ```
-        - Random-action agent
-
-            ```bash
-            # use 'FULL_PATH_TO_isaaclab.sh|bat -p' instead of 'python' if Isaac Lab is not installed in Python venv or conda
-            python scripts/random_agent.py --task=<TASK_NAME>
-            ```
-
-### Set up IDE (Optional)
-
-To setup the IDE, please follow these instructions:
-
-- Run VSCode Tasks, by pressing `Ctrl+Shift+P`, selecting `Tasks: Run Task` and running the `setup_python_env` in the drop down menu.
-  When running this task, you will be prompted to add the absolute path to your Isaac Sim installation.
-
-If everything executes correctly, it should create a file .python.env in the `.vscode` directory.
-The file contains the python paths to all the extensions provided by Isaac Sim and Omniverse.
-This helps in indexing all the python modules for intelligent suggestions while writing code.
-
-### Setup as Omniverse Extension (Optional)
-
-We provide an example UI extension that will load upon enabling your extension defined in `source/race_400m/race_400m/ui_extension_example.py`.
-
-To enable your extension, follow these steps:
-
-1. **Add the search path of this project/repository** to the extension manager:
-    - Navigate to the extension manager using `Window` -> `Extensions`.
-    - Click on the **Hamburger Icon**, then go to `Settings`.
-    - In the `Extension Search Paths`, enter the absolute path to the `source` directory of this project/repository.
-    - If not already present, in the `Extension Search Paths`, enter the path that leads to Isaac Lab's extension directory directory (`IsaacLab/source`)
-    - Click on the **Hamburger Icon**, then click `Refresh`.
-
-2. **Search and enable your extension**:
-    - Find your extension under the `Third Party` category.
-    - Toggle it to enable your extension.
-
-## Code formatting
-
-We have a pre-commit template to automatically format your code.
-To install pre-commit:
+The task name for RSL-RL training is exactly:
 
 ```bash
-pip install pre-commit
+Template-Race-400m
 ```
 
-Then you can run pre-commit with:
+`Race400m-v0` is a legacy Gym registration and must not be used with
+`scripts/rsl_rl/train.py`.
+
+## Server setup
+
+The server needs a compatible Isaac Lab / Isaac Sim installation and a Conda
+environment named `isaaclab`.  Clone this repository, then install the local
+package in editable mode:
 
 ```bash
-pre-commit run --all-files
+git clone https://github.com/ImolHF/race_400m.git
+cd race_400m
+conda activate isaaclab
+python -m pip install -e source/race_400m
 ```
 
-## Troubleshooting
+The G1 USD is included through the repository-relative `unitree_model` path;
+do not replace it with a local Windows absolute path.
 
-### Pylance Missing Indexing of Extensions
+## Two-GPU configuration
 
-In some VsCode versions, the indexing of part of the extensions is missing.
-In this case, add the path to your extension in `.vscode/settings.json` under the key `"python.analysis.extraPaths"`.
+The project is configured for two GPUs. `torchrun` starts one Isaac Sim and one
+PhysX scene per GPU; `--num_envs` is therefore the environment count **per
+GPU**, not the total.
 
-```json
-{
-    "python.analysis.extraPaths": [
-        "<path-to-ext-repo>/source/race_400m"
-    ]
-}
+Before training, limit CPU BLAS/OpenMP thread oversubscription.  This does not
+remove all CPU work, but prevents two training processes from creating many
+competing CPU worker threads.
+
+```bash
+export CUDA_VISIBLE_DEVICES=0,1
+export OMP_NUM_THREADS=1
+export MKL_NUM_THREADS=1
+export OPENBLAS_NUM_THREADS=1
 ```
 
-### Pylance Crash
+The environment uses GPU PhysX, Fabric, GPU-resident waypoint reward tensors,
+and GPU contact sensors.  It does not render cameras or use height scans during
+training.  PhysX buffers are sized for 4096 G1 environments per GPU.
 
-If you encounter a crash in `pylance`, it is probable that too many files are indexed and you run out of memory.
-A possible solution is to exclude some of omniverse packages that are not used in your project.
-To do so, modify `.vscode/settings.json` and comment out packages under the key `"python.analysis.extraPaths"`
-Some examples of packages that can likely be excluded are:
+## Smoke test
 
-```json
-"<path-to-isaac-sim>/extscache/omni.anim.*"         // Animation packages
-"<path-to-isaac-sim>/extscache/omni.kit.*"          // Kit UI tools
-"<path-to-isaac-sim>/extscache/omni.graph.*"        // Graph UI tools
-"<path-to-isaac-sim>/extscache/omni.services.*"     // Services tools
-...
+Run this first. It confirms distributed launch, package installation, contact
+sensors, and PPO training without committing significant server time:
+
+```bash
+torchrun --standalone --nproc_per_node=2 scripts/rsl_rl/train.py \
+  --task Template-Race-400m --headless --distributed \
+  --num_envs 256 --max_iterations 2 --run_name smoke_test
 ```
+
+## Training from scratch
+
+Use this only when you intentionally want a new policy. It learns both running
+and the 200-point navigation task from scratch:
+
+```bash
+torchrun --standalone --nproc_per_node=2 scripts/rsl_rl/train.py \
+  --task Template-Race-400m --headless --distributed \
+  --num_envs 4096 --max_iterations 5000 --run_name race_from_scratch
+```
+
+This creates logs under:
+
+```text
+logs/rsl_rl/g1_track_400m/<timestamp>_race_from_scratch/
+```
+
+## Recommended: gait-quality fine-tuning
+
+If you already have a checkpoint that completes the lap, fine-tune it instead
+of training from scratch. The current task adds official-G1-style gait shaping:
+hip yaw/roll deviation, joint acceleration/torque penalties, biped air-time,
+and foot-slide penalties. The 200-point logic is unchanged.
+
+First list prior runs:
+
+```bash
+ls -lt logs/rsl_rl/g1_track_400m/
+```
+
+Assuming the best run is named
+`2026-08-14_12-00-00_race_baseline`, run:
+
+```bash
+torchrun --standalone --nproc_per_node=2 scripts/rsl_rl/train.py \
+  --task Template-Race-400m --headless --distributed \
+  --num_envs 4096 --max_iterations 1500 --run_name gait_finetune \
+  --resume --load_run '2026-08-14_12-00-00_race_baseline' \
+  --checkpoint 'model_.*.pt'
+```
+
+Replace `2026-08-14_12-00-00_race_baseline` with your actual directory name.
+The checkpoint expression selects the latest `model_*.pt` in that directory.
+Start with 1500 iterations, inspect the result, and keep the original
+checkpoint unchanged as the rollback baseline.
+
+## What to monitor
+
+Use TensorBoard:
+
+```bash
+tensorboard --logdir logs/rsl_rl/g1_track_400m --bind_all
+```
+
+Key metrics:
+
+- `Episode_Reward/reached_checkpoint`: should remain strong; a collapse means
+  gait regularization is interfering with navigation.
+- `Episode_Termination/completed`: completion frequency; this is the primary
+  success measure.
+- `Episode_Termination/robot_fallen`: should decrease during gait fine-tuning.
+- `Episode_Reward/feet_slide`, `hip_deviation`, and `action_rate`: use them to
+  compare gait quality across checkpoints, not as stand-alone success metrics.
+
+## Safety and scope
+
+This is a simulation training project. The current navigation method relies on
+preconfigured ordered coordinates and simulator state; it is not visual or
+LiDAR self-navigation. Test every new checkpoint in simulation before any
+sim2sim or physical-robot work.
