@@ -10,8 +10,8 @@ from isaaclab_rl.rsl_rl import RslRlOnPolicyRunnerCfg, RslRlPpoActorCriticCfg, R
 
 @configclass
 class PPORunnerCfg(RslRlOnPolicyRunnerCfg):
-    # With six GPUs and 2,048 environments per GPU, one PPO rollout contains
-    # 294,912 transitions (6 * 2,048 * 24).
+    # With two GPUs and 4,096 environments per GPU, one PPO rollout contains
+    # 196,608 transitions (2 * 4,096 * 24).
     num_steps_per_env = 24
     max_iterations = 5000
     save_interval = 50

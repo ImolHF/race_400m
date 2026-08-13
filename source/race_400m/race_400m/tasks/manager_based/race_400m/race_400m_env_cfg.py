@@ -106,11 +106,11 @@ class TerminationsCfg:
 class RaceEnvCfg(ManagerBasedRLEnvCfg):
     """Fixed target-point navigation task for the G1 robot."""
 
-    # This is the number of environments *per GPU*.  The six-GPU training
-    # command therefore collects 6 * 2048 = 12,288 environments per update.
-    # Keep this value conservative enough for reliable PhysX startup; override
-    # it with --num_envs only after verifying headroom on the target server.
-    scene: TrackSceneCfg = TrackSceneCfg(num_envs=2048, env_spacing=2.5)
+    # This is the number of environments *per GPU*.  The two-GPU command
+    # collects 2 * 4096 = 8,192 environments per PPO update.  Concentrating
+    # environments on two 72-GB GPUs raises per-device PhysX/CUDA occupancy
+    # when a many-GPU run is bottlenecked by host-side simulation work.
+    scene: TrackSceneCfg = TrackSceneCfg(num_envs=4096, env_spacing=2.5)
     observations: ObservationsCfg = ObservationsCfg()
     actions: ActionsCfg = ActionsCfg()
     rewards: RewardsCfg = RewardsCfg()
@@ -126,6 +126,17 @@ class RaceEnvCfg(ManagerBasedRLEnvCfg):
         super().__post_init__()
         self.sim.dt = 0.01
         self.sim.render_interval = self.decimation
+        # PhysX GPU buffers sized for 4,096 G1 articulations on one device.
+        # These avoid buffer growth and broad-phase capacity stalls at scale.
+        self.sim.physx.gpu_max_rigid_contact_count = 2**24
+        self.sim.physx.gpu_max_rigid_patch_count = 2**22
+        self.sim.physx.gpu_found_lost_pairs_capacity = 2**24
+        self.sim.physx.gpu_found_lost_aggregate_pairs_capacity = 2**26
+        self.sim.physx.gpu_total_aggregate_pairs_capacity = 2**24
+        self.sim.physx.gpu_collision_stack_size = 2**28
+        self.sim.physx.gpu_heap_capacity = 2**28
+        self.sim.physx.gpu_temp_buffer_capacity = 2**26
+        self.sim.physx.gpu_max_num_partitions = 32
 
         track_cfg = TrackpointCfg()
         self.path_points = track_cfg.path_points
