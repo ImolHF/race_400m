@@ -63,17 +63,31 @@ class ObservationsCfg:
 
 @configclass
 class ActionsCfg:
-    """Leg-only residual actions about G1's configured default standing pose.
+    """Leg actions plus bounded shoulder/elbow swing about the standing pose.
 
-    Keeping the torso and arms at their default targets makes the initial
-    locomotion problem tractable: the policy first learns balance and stepping
-    instead of exploiting large upper-body motions.
+    The waist and wrists remain fixed.  This gives the policy enough arm motion
+    to counter hip yaw while preventing the upper body from becoming a second,
+    unconstrained locomotion strategy.
     """
 
     joint_pos = JointPositionActionCfg(
         asset_name="robot",
-        joint_names=[".*_hip_.*", ".*_knee_joint", ".*_ankle_.*"],
-        scale=0.25,
+        joint_names=[
+            ".*_hip_.*",
+            ".*_knee_joint",
+            ".*_ankle_.*",
+            ".*_shoulder_pitch_joint",
+            ".*_shoulder_roll_joint",
+            ".*_elbow_joint",
+        ],
+        scale={
+            ".*_hip_.*": 0.25,
+            ".*_knee_joint": 0.25,
+            ".*_ankle_.*": 0.20,
+            ".*_shoulder_pitch_joint": 0.20,
+            ".*_shoulder_roll_joint": 0.10,
+            ".*_elbow_joint": 0.15,
+        },
         use_default_offset=True,
     )
 
