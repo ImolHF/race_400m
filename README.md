@@ -137,6 +137,8 @@ Key metrics:
   speed should rise while lateral velocity falls.
 - `Episode_Reward/swing_forward` and `forward_landing`: verify that airborne
   feet swing and land ahead of the pelvis in the robot's yaw frame.
+- `Episode_Reward/base_height`: the target is now 0.70 m (previously 0.74 m)
+  so the policy learns a modest knee bend and a lower moving center of mass.
 
 ## References used for gait shaping
 

@@ -94,7 +94,10 @@ class RewardsCfg:
     # forward motion, including a forward fall.
     termination_penalty = RewTerm(func=isaac_mdp.is_terminated, weight=-100.0)
     flat_orientation = RewTerm(func=isaac_mdp.flat_orientation_l2, weight=-2.0)
-    base_height = RewTerm(func=isaac_mdp.base_height_l2, weight=-8.0, params={"target_height": 0.74})
+    # A modestly lower trunk target gives the leg-only policy a small knee bend
+    # while moving.  This reduces the center of mass and improves recovery
+    # margin without forcing a deep squat that would harm forward progress.
+    base_height = RewTerm(func=isaac_mdp.base_height_l2, weight=-8.0, params={"target_height": 0.70})
     lin_vel_z = RewTerm(func=isaac_mdp.lin_vel_z_l2, weight=-1.0)
     ang_vel_xy = RewTerm(func=isaac_mdp.ang_vel_xy_l2, weight=-0.1)
     joint_vel = RewTerm(func=isaac_mdp.joint_vel_l2, weight=-2.0e-4)
