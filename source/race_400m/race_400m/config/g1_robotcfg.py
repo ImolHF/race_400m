@@ -70,28 +70,18 @@ G1_CONFIG = ArticulationCfg(
     ),
     actuators={
         "left_leg": ImplicitActuatorCfg(
-            joint_names_expr=["left_hip.*", "left_knee.*"],
+            joint_names_expr=["left_hip.*", "left_knee.*", "left_ankle.*"],
             effort_limit_sim=300.0,
             velocity_limit_sim=50.0,
             stiffness={"left_hip_yaw_joint": 150.0, "left_hip_roll_joint": 150.0, "left_hip_pitch_joint": 200.0, "left_knee_joint": 200.0},
-            # The original damping of 5.0 let fast residual targets overshoot
-            # and oscillate.  This remains deliberately moderate so the policy
-            # can run, but removes the visibly rubbery leg response.
-            damping={"left_hip_yaw_joint": 10.0, "left_hip_roll_joint": 10.0, "left_hip_pitch_joint": 10.0, "left_knee_joint": 10.0},
+            damping={"left_hip_yaw_joint": 5.0, "left_hip_roll_joint": 5.0, "left_hip_pitch_joint": 5.0, "left_knee_joint": 5.0},
         ),
         "right_leg": ImplicitActuatorCfg(
-            joint_names_expr=["right_hip.*", "right_knee.*"],
+            joint_names_expr=["right_hip.*", "right_knee.*", "right_ankle.*"],
             effort_limit_sim=300.0,
             velocity_limit_sim=50.0,
             stiffness={"right_hip_yaw_joint": 150.0, "right_hip_roll_joint": 150.0, "right_hip_pitch_joint": 200.0, "right_knee_joint": 200.0},
-            damping={"right_hip_yaw_joint": 10.0, "right_hip_roll_joint": 10.0, "right_hip_pitch_joint": 10.0, "right_knee_joint": 10.0},
-        ),
-        "ankles": ImplicitActuatorCfg(
-            joint_names_expr=[".*_ankle_pitch_joint", ".*_ankle_roll_joint"],
-            effort_limit_sim=80.0,
-            velocity_limit_sim=50.0,
-            stiffness=40.0,
-            damping=4.0,
+            damping={"right_hip_yaw_joint": 5.0, "right_hip_roll_joint": 5.0, "right_hip_pitch_joint": 5.0, "right_knee_joint": 5.0},
         ),
         "waist": ImplicitActuatorCfg(
             joint_names_expr=["waist.*"],

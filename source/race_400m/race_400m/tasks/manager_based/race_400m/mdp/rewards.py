@@ -269,32 +269,6 @@ def compact_stride_landing_penalty(
     return torch.sum(torch.square(over_stride) * first_contact, dim=1) * moving
 
 
-def foot_heading_penalty(env, sensor_cfg: SceneEntityCfg, asset_cfg: SceneEntityCfg) -> torch.Tensor:
-    """Penalize stance feet whose forward axis turns away from body forward.
-
-    At contact this directly suppresses toe-in/toe-out landings.  It is
-    evaluated in the horizontal plane, so normal ankle pitch and roll used for
-    clearance and support are not penalized.
-    """
-    contact_sensor: ContactSensor = env.scene.sensors[sensor_cfg.name]
-    robot = env.scene[asset_cfg.name]
-    foot_forward_b = torch.zeros((env.num_envs, len(asset_cfg.body_ids), 3), device=env.device)
-    foot_forward_b[..., 0] = 1.0
-    foot_forward_w = quat_apply(
-        robot.data.body_quat_w[:, asset_cfg.body_ids].reshape(-1, 4), foot_forward_b.reshape(-1, 3)
-    ).reshape(env.num_envs, -1, 3)
-    root_forward_b = torch.zeros((env.num_envs, 3), device=env.device)
-    root_forward_b[:, 0] = 1.0
-    root_forward_w = quat_apply(yaw_quat(robot.data.root_quat_w), root_forward_b).unsqueeze(1)
-    foot_xy = foot_forward_w[:, :, :2]
-    foot_xy = foot_xy / torch.linalg.vector_norm(foot_xy, dim=-1, keepdim=True).clamp_min(1.0e-6)
-    root_xy = root_forward_w[:, :, :2]
-    alignment_error = 1.0 - torch.sum(foot_xy * root_xy, dim=-1).clamp(min=-1.0, max=1.0)
-    in_contact = contact_sensor.data.current_contact_time[:, sensor_cfg.body_ids] > 0.0
-    moving = torch.linalg.vector_norm(robot.data.root_lin_vel_w[:, :2], dim=-1) > 0.1
-    return torch.sum(alignment_error * in_contact, dim=1) * moving
-
-
 def crossed_feet_penalty(env, min_half_width: float, asset_cfg: SceneEntityCfg) -> torch.Tensor:
     """Penalize feet entering the wrong side of the robot's yaw frame.
 
