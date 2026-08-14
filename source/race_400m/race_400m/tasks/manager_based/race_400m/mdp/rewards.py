@@ -9,13 +9,6 @@ from isaaclab.sensors import ContactSensor
 from isaaclab.utils.math import quat_apply, quat_apply_inverse, yaw_quat
 
 
-def _training_ramp(env, ramp_steps: int) -> float:
-    """Return a shared, monotonic curriculum factor for reward shaping."""
-    if ramp_steps <= 0:
-        return 1.0
-    return min(float(env.common_step_counter) / ramp_steps, 1.0)
-
-
 def _ensure_navigation_state(env) -> None:
     """Create device-local, per-environment navigation state on first use."""
     if not hasattr(env, "_track_points"):
@@ -276,9 +269,7 @@ def compact_stride_landing_penalty(
     return torch.sum(torch.square(over_stride) * first_contact, dim=1) * moving
 
 
-def foot_heading_penalty(
-    env, sensor_cfg: SceneEntityCfg, asset_cfg: SceneEntityCfg, ramp_steps: int = 0
-) -> torch.Tensor:
+def foot_heading_penalty(env, sensor_cfg: SceneEntityCfg, asset_cfg: SceneEntityCfg) -> torch.Tensor:
     """Penalize stance feet whose forward axis turns away from body forward.
 
     At contact this directly suppresses toe-in/toe-out landings.  It is
@@ -301,12 +292,10 @@ def foot_heading_penalty(
     alignment_error = 1.0 - torch.sum(foot_xy * root_xy, dim=-1).clamp(min=-1.0, max=1.0)
     in_contact = contact_sensor.data.current_contact_time[:, sensor_cfg.body_ids] > 0.0
     moving = torch.linalg.vector_norm(robot.data.root_lin_vel_w[:, :2], dim=-1) > 0.1
-    return torch.sum(alignment_error * in_contact, dim=1) * moving * _training_ramp(env, ramp_steps)
+    return torch.sum(alignment_error * in_contact, dim=1) * moving
 
 
-def knee_valgus_penalty(
-    env, asset_cfg: SceneEntityCfg, tolerance: float, outward_margin: float, ramp_steps: int = 0
-) -> torch.Tensor:
+def knee_valgus_penalty(env, asset_cfg: SceneEntityCfg, tolerance: float) -> torch.Tensor:
     """Penalize knees collapsing inward relative to their hip-to-ankle line.
 
     ``asset_cfg`` bodies must be ordered left hip, left knee, left ankle,
@@ -329,17 +318,13 @@ def knee_valgus_penalty(
     right_line_y = _line_y(right_hip, right_knee, right_ankle)
     # In the yaw frame, positive y is the left side.  A left knee moving right
     # of its leg line, or a right knee moving left, is valgus collapse.
-    left_valgus = (left_line_y + outward_margin - left_knee[:, 1] - tolerance).clamp_min(0.0)
-    right_valgus = (right_knee[:, 1] - right_line_y + outward_margin - tolerance).clamp_min(0.0)
+    left_valgus = (left_line_y - left_knee[:, 1] - tolerance).clamp_min(0.0)
+    right_valgus = (right_knee[:, 1] - right_line_y - tolerance).clamp_min(0.0)
     moving = torch.linalg.vector_norm(robot.data.root_lin_vel_w[:, :2], dim=-1) > 0.1
-    # A linear hinge gives a useful gradient for small, visually obvious knee
-    # collapse.  The previous squared form was almost zero until severe valgus.
-    return (left_valgus + right_valgus) * moving * _training_ramp(env, ramp_steps)
+    return (torch.square(left_valgus) + torch.square(right_valgus)) * moving
 
 
-def minimum_stance_width_penalty(
-    env, min_width: float, sensor_cfg: SceneEntityCfg, asset_cfg: SceneEntityCfg, ramp_steps: int = 0
-) -> torch.Tensor:
+def minimum_stance_width_penalty(env, min_width: float, sensor_cfg: SceneEntityCfg, asset_cfg: SceneEntityCfg) -> torch.Tensor:
     """Penalize double-support feet whose lateral separation is too narrow."""
     contact_sensor: ContactSensor = env.scene.sensors[sensor_cfg.name]
     robot = env.scene[asset_cfg.name]
@@ -351,25 +336,7 @@ def minimum_stance_width_penalty(
     stance_width = foot_offset_b[:, 0, 1] - foot_offset_b[:, 1, 1]
     double_support = torch.all(contact_sensor.data.current_contact_time[:, sensor_cfg.body_ids] > 0.0, dim=1)
     moving = torch.linalg.vector_norm(robot.data.root_lin_vel_w[:, :2], dim=-1) > 0.1
-    return (min_width - stance_width).clamp_min(0.0) * double_support * moving * _training_ramp(env, ramp_steps)
-
-
-def stance_side_penalty(
-    env, min_half_width: float, sensor_cfg: SceneEntityCfg, asset_cfg: SceneEntityCfg, ramp_steps: int = 0
-) -> torch.Tensor:
-    """Keep each supporting foot on its own side during single support too."""
-    contact_sensor: ContactSensor = env.scene.sensors[sensor_cfg.name]
-    robot = env.scene[asset_cfg.name]
-    foot_offset_w = robot.data.body_pos_w[:, asset_cfg.body_ids] - robot.data.root_pos_w.unsqueeze(1)
-    yaw = yaw_quat(robot.data.root_quat_w)
-    foot_offset_b = quat_apply_inverse(
-        yaw.unsqueeze(1).expand(-1, foot_offset_w.shape[1], -1).reshape(-1, 4), foot_offset_w.reshape(-1, 3)
-    ).reshape(env.num_envs, -1, 3)
-    in_contact = contact_sensor.data.current_contact_time[:, sensor_cfg.body_ids] > 0.0
-    left_inward = (min_half_width - foot_offset_b[:, 0, 1]).clamp_min(0.0)
-    right_inward = (min_half_width + foot_offset_b[:, 1, 1]).clamp_min(0.0)
-    moving = torch.linalg.vector_norm(robot.data.root_lin_vel_w[:, :2], dim=-1) > 0.1
-    return (left_inward * in_contact[:, 0] + right_inward * in_contact[:, 1]) * moving * _training_ramp(env, ramp_steps)
+    return torch.square((min_width - stance_width).clamp_min(0.0)) * double_support * moving
 
 
 def crossed_feet_penalty(env, min_half_width: float, asset_cfg: SceneEntityCfg) -> torch.Tensor:
