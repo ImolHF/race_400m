@@ -23,7 +23,6 @@ from .mdp.rewards import (
     forward_course_speed as _forward_course_speed,
     forward_foot_landing as _forward_foot_landing,
     compact_stride_landing_penalty as _compact_stride_landing_penalty,
-    contact_foot_velocity_penalty as _contact_foot_velocity_penalty,
     excess_swing_time_penalty as _excess_swing_time_penalty,
     foot_heading_penalty as _foot_heading_penalty,
     knee_valgus_penalty as _knee_valgus_penalty,
@@ -286,48 +285,6 @@ class RewardsCfg:
 
 
 @configclass
-class FromScratchRewardsCfg(RewardsCfg):
-    """Curriculum version of the race task for learning gait and tracking together.
-
-    Gait, contact, posture, and compact-step shaping are active from the first
-    rollout. Ordered-target tracking starts weak and reaches full strength over
-    14,400 environment steps (about 600 PPO iterations at 24 steps/update).
-    """
-
-    progress = RewTerm(func=_progress_reward, weight=8.0, params={"ramp_steps": 14400, "min_scale": 0.20})
-    reached_checkpoint = RewTerm(
-        func=_reached_checkpoint,
-        weight=5.0,
-        params={"ramp_steps": 14400, "min_scale": 0.20},
-    )
-    alignment = RewTerm(func=_alignment_reward, weight=0.20, params={"ramp_steps": 9600, "min_scale": 0.35})
-    course_heading = RewTerm(
-        func=_course_heading_alignment,
-        weight=1.25,
-        params={"ramp_steps": 9600, "min_scale": 0.35},
-    )
-    forward_course_speed = RewTerm(
-        func=_forward_course_speed,
-        weight=1.50,
-        params={"ramp_steps": 9600, "min_scale": 0.35},
-    )
-    deviation = RewTerm(func=_deviation_penalty, weight=0.5, params={"ramp_steps": 14400, "min_scale": 0.20})
-    # Direct equivalent of Unitree RL Gym's contact_no_vel.  It complements
-    # the existing feet_slide term and is especially useful before long-range
-    # waypoint rewards dominate learning.
-    contact_no_vel = RewTerm(
-        func=_contact_foot_velocity_penalty,
-        weight=-0.04,
-        params={
-            "sensor_cfg": SceneEntityCfg(
-                "contact_forces", body_names=["left_ankle_roll_link", "right_ankle_roll_link"]
-            ),
-            "asset_cfg": SceneEntityCfg("robot", body_names=["left_ankle_roll_link", "right_ankle_roll_link"]),
-        },
-    )
-
-
-@configclass
 class EventsCfg:
     """Keep physical and navigation state synchronized on every reset."""
 
@@ -383,10 +340,3 @@ class RaceEnvCfg(ManagerBasedRLEnvCfg):
         track_cfg = TrackpointCfg()
         self.path_points = track_cfg.path_points
         print(f"[INFO] Fixed navigation track: {len(self.path_points)} targets, 0 m to 400 m.")
-
-
-@configclass
-class FromScratchRaceEnvCfg(RaceEnvCfg):
-    """Separate curriculum task; the existing fine-tuning task is untouched."""
-
-    rewards: FromScratchRewardsCfg = FromScratchRewardsCfg()

@@ -39,17 +39,3 @@ class PPORunnerCfg(RslRlOnPolicyRunnerCfg):
         desired_kl=0.01,
         max_grad_norm=1.0,
     )
-
-
-@configclass
-class FromScratchPPORunnerCfg(PPORunnerCfg):
-    """Longer, slightly broader-exploration configuration for curriculum learning."""
-
-    max_iterations = 8000
-    experiment_name = "g1_track_400m_from_scratch"
-    policy = RslRlPpoActorCriticCfg(
-        init_noise_std=0.6,
-        actor_hidden_dims=[512, 256, 128],
-        critic_hidden_dims=[512, 256, 128],
-        activation="elu",
-    )
