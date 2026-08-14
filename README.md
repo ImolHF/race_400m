@@ -132,6 +132,11 @@ Key metrics:
 - `Episode_Reward/alternating_gait`, `swing_clearance`, and `crossed_feet`:
   new gait-quality terms. They should improve without a material reduction in
   checkpoint rewards or full-lap completion.
+- `Episode_Reward/course_heading`, `forward_course_speed`, and
+  `lateral_velocity`: the primary anti-crab-walk terms. Heading and forward
+  speed should rise while lateral velocity falls.
+- `Episode_Reward/swing_forward` and `forward_landing`: verify that airborne
+  feet swing and land ahead of the pelvis in the robot's yaw frame.
 
 ## References used for gait shaping
 

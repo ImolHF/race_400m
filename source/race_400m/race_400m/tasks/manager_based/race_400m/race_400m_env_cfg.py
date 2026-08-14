@@ -18,13 +18,18 @@ from .mdp.rewards import (
     deviation_penalty as _deviation_penalty,
     alternating_foot_gait as _alternating_foot_gait,
     crossed_feet_penalty as _crossed_feet_penalty,
+    course_heading_alignment as _course_heading_alignment,
     feet_air_time_positive_biped as _feet_air_time_positive_biped,
+    forward_course_speed as _forward_course_speed,
+    forward_foot_landing as _forward_foot_landing,
+    lateral_velocity_penalty as _lateral_velocity_penalty,
     progress_reward as _progress_reward,
     reached_checkpoint as _reached_checkpoint,
     reset_path_progress as _reset_path_progress,
     target_direction as _target_direction,
     target_distance as _target_distance,
     swing_foot_clearance as _swing_foot_clearance,
+    swing_foot_forward as _swing_foot_forward,
 )
 from .mdp.terminations import is_completed as _is_completed
 from .mdp.terminations import robot_fallen as _robot_fallen
@@ -76,7 +81,12 @@ class RewardsCfg:
     # advancement resets the potential for the next target.
     progress = RewTerm(func=_progress_reward, weight=8.0)
     reached_checkpoint = RewTerm(func=_reached_checkpoint, weight=5.0)
-    alignment = RewTerm(func=_alignment_reward, weight=0.75)
+    # Retained only as a weak recovery signal when off the centre line.  The
+    # terms immediately below define the intended forward-running solution.
+    alignment = RewTerm(func=_alignment_reward, weight=0.20)
+    course_heading = RewTerm(func=_course_heading_alignment, weight=1.25)
+    forward_course_speed = RewTerm(func=_forward_course_speed, weight=1.50)
+    lateral_velocity = RewTerm(func=_lateral_velocity_penalty, weight=-1.00)
     deviation = RewTerm(func=_deviation_penalty, weight=0.5)
     alive = RewTerm(func=_alive_reward, weight=0.02)
     # Stability and smoothness terms are essential when learning bipedal
@@ -157,6 +167,30 @@ class RewardsCfg:
         weight=-0.5,
         params={
             "min_half_width": 0.04,
+            "asset_cfg": SceneEntityCfg("robot", body_names=["left_ankle_roll_link", "right_ankle_roll_link"]),
+        },
+    )
+    # Forward-swing and forward-landing rewards use the existing GPU contact
+    # sensor.  They apply only to a foot in flight/at touchdown, never to both
+    # grounded feet, avoiding a two-foot hopping solution.
+    swing_forward = RewTerm(
+        func=_swing_foot_forward,
+        weight=0.20,
+        params={
+            "sensor_cfg": SceneEntityCfg(
+                "contact_forces", body_names=["left_ankle_roll_link", "right_ankle_roll_link"]
+            ),
+            "asset_cfg": SceneEntityCfg("robot", body_names=["left_ankle_roll_link", "right_ankle_roll_link"]),
+        },
+    )
+    forward_landing = RewTerm(
+        func=_forward_foot_landing,
+        weight=0.40,
+        params={
+            "min_forward": 0.03,
+            "sensor_cfg": SceneEntityCfg(
+                "contact_forces", body_names=["left_ankle_roll_link", "right_ankle_roll_link"]
+            ),
             "asset_cfg": SceneEntityCfg("robot", body_names=["left_ankle_roll_link", "right_ankle_roll_link"]),
         },
     )

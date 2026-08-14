@@ -6,7 +6,7 @@ import torch
 
 from isaaclab.managers import SceneEntityCfg
 from isaaclab.sensors import ContactSensor
-from isaaclab.utils.math import quat_apply_inverse, yaw_quat
+from isaaclab.utils.math import quat_apply, quat_apply_inverse, yaw_quat
 
 
 def _ensure_navigation_state(env) -> None:
@@ -105,6 +105,43 @@ def alignment_reward(env) -> torch.Tensor:
     return forward_speed.clamp(min=-1.0, max=2.0)
 
 
+def _course_tangent(env) -> torch.Tensor:
+    """Return the unit forward tangent of the active ordered path segment."""
+    _ensure_navigation_state(env)
+    current = env._next_target_idx.clamp(max=len(env.cfg.path_points) - 1)
+    previous = (current - 1).clamp_min(0)
+    tangent = env._track_points[current] - env._track_points[previous]
+    return tangent / torch.linalg.vector_norm(tangent, dim=-1, keepdim=True).clamp_min(1.0e-6)
+
+
+def course_heading_alignment(env) -> torch.Tensor:
+    """Reward the robot's facing direction matching the track tangent.
+
+    This closes the previous reward loophole where a robot could retain a
+    sideways yaw and travel laterally to the next checkpoint.
+    """
+    robot = env.scene["robot"]
+    forward_b = torch.zeros((env.num_envs, 3), dtype=torch.float32, device=env.device)
+    forward_b[:, 0] = 1.0
+    forward_w = quat_apply(yaw_quat(robot.data.root_quat_w), forward_b)[:, :2]
+    return (forward_w * _course_tangent(env)).sum(dim=-1).clamp(min=-1.0, max=1.0)
+
+
+def forward_course_speed(env) -> torch.Tensor:
+    """Reward track progress produced by forward, rather than lateral, motion."""
+    robot = env.scene["robot"]
+    velocity_b = quat_apply_inverse(yaw_quat(robot.data.root_quat_w), robot.data.root_lin_vel_w)
+    heading = course_heading_alignment(env).clamp_min(0.0)
+    return velocity_b[:, 0].clamp(min=-1.0, max=2.0) * heading
+
+
+def lateral_velocity_penalty(env) -> torch.Tensor:
+    """Penalize root sideways speed in the robot yaw frame (crab walking)."""
+    robot = env.scene["robot"]
+    velocity_b = quat_apply_inverse(yaw_quat(robot.data.root_quat_w), robot.data.root_lin_vel_w)
+    return torch.square(velocity_b[:, 1])
+
+
 def deviation_penalty(env) -> torch.Tensor:
     """Penalize moving more than one metre from any generated track point."""
     position_local, _, _ = _target_data(env)
@@ -172,6 +209,36 @@ def swing_foot_clearance(
     reward = torch.exp(-height_error / 0.05**2) * torch.tanh(2.0 * planar_speed) * in_air
     moving = torch.linalg.vector_norm(robot.data.root_lin_vel_w[:, :2], dim=-1) > 0.1
     return reward.sum(dim=1) * moving
+
+
+def swing_foot_forward(env, sensor_cfg: SceneEntityCfg, asset_cfg: SceneEntityCfg) -> torch.Tensor:
+    """Reward only airborne feet moving forward in the robot yaw frame."""
+    contact_sensor: ContactSensor = env.scene.sensors[sensor_cfg.name]
+    robot = env.scene[asset_cfg.name]
+    in_air = contact_sensor.data.current_contact_time[:, sensor_cfg.body_ids] <= 0.0
+    relative_velocity_w = robot.data.body_lin_vel_w[:, asset_cfg.body_ids] - robot.data.root_lin_vel_w.unsqueeze(1)
+    yaw = yaw_quat(robot.data.root_quat_w)
+    relative_velocity_b = quat_apply_inverse(
+        yaw.unsqueeze(1).expand(-1, relative_velocity_w.shape[1], -1).reshape(-1, 4),
+        relative_velocity_w.reshape(-1, 3),
+    ).reshape(env.num_envs, -1, 3)
+    moving = torch.linalg.vector_norm(robot.data.root_lin_vel_w[:, :2], dim=-1) > 0.1
+    return (relative_velocity_b[:, :, 0].clamp(min=0.0, max=2.0) * in_air).sum(dim=1) * moving
+
+
+def forward_foot_landing(env, sensor_cfg: SceneEntityCfg, asset_cfg: SceneEntityCfg, min_forward: float) -> torch.Tensor:
+    """Reward an airborne foot landing ahead of the pelvis, not to its side."""
+    contact_sensor: ContactSensor = env.scene.sensors[sensor_cfg.name]
+    robot = env.scene[asset_cfg.name]
+    first_contact = contact_sensor.compute_first_contact(env.step_dt)[:, sensor_cfg.body_ids]
+    relative_position_w = robot.data.body_pos_w[:, asset_cfg.body_ids] - robot.data.root_pos_w.unsqueeze(1)
+    yaw = yaw_quat(robot.data.root_quat_w)
+    relative_position_b = quat_apply_inverse(
+        yaw.unsqueeze(1).expand(-1, relative_position_w.shape[1], -1).reshape(-1, 4),
+        relative_position_w.reshape(-1, 3),
+    ).reshape(env.num_envs, -1, 3)
+    moving = torch.linalg.vector_norm(robot.data.root_lin_vel_w[:, :2], dim=-1) > 0.1
+    return ((relative_position_b[:, :, 0] - min_forward).clamp(min=0.0, max=0.4) * first_contact).sum(dim=1) * moving
 
 
 def crossed_feet_penalty(env, min_half_width: float, asset_cfg: SceneEntityCfg) -> torch.Tensor:
