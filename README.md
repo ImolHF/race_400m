@@ -80,6 +80,37 @@ This creates logs under:
 logs/rsl_rl/g1_track_400m/<timestamp>_race_from_scratch/
 ```
 
+## Recommended new baseline: gait-and-track curriculum from zero
+
+`Template-Race-400m-FromScratch` is a separate task for training a fresh
+policy. It retains the 12-leg-joint action space, 82-value observation, and
+201 ordered coordinates, but combines the existing posture/compact-gait
+rewards with reward concepts from Unitree RL Gym and RL Lab. During the first
+400 PPO iterations, toe direction, knee alignment, stance width, and support
+foot placement ramp in. Ordered-target progress, checkpoint, heading, speed,
+and deviation rewards stay weak initially and reach full strength by about 600
+iterations. This prevents the early policy from having to solve natural gait
+and 400 m navigation simultaneously.
+
+The track-deviation calculation is also optimized: it projects each robot onto
+its active path segment rather than computing distances to all 201 points each
+step. This removes the repeated `torch.cdist` allocation and scales linearly
+with the number of environments.
+
+Run it without `--resume`:
+
+```bash
+torchrun --standalone --nproc_per_node=2 scripts/rsl_rl/train.py \
+  --task Template-Race-400m-FromScratch --headless --distributed \
+  --num_envs 4096 --max_iterations 8000 --run_name gait_track_curriculum
+```
+
+The output is isolated under `logs/rsl_rl/g1_track_400m_from_scratch/` and
+does not overwrite or alter any existing fine-tuning run. After 600 iterations,
+inspect videos and compare completion, falls, `toe_forward`, `knee_valgus`,
+`stance_side`, contact-foot velocity, and progress before deciding whether to
+continue to 8,000 iterations.
+
 ## Recommended: gait-quality fine-tuning
 
 If you already have a checkpoint that completes the lap, fine-tune it instead

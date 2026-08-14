@@ -16,6 +16,11 @@ def _training_ramp(env, ramp_steps: int) -> float:
     return min(float(env.common_step_counter) / ramp_steps, 1.0)
 
 
+def _ramped_scale(env, ramp_steps: int, min_scale: float) -> float:
+    """Keep a weak task signal initially, then ramp it to full strength."""
+    return min_scale + (1.0 - min_scale) * _training_ramp(env, ramp_steps)
+
+
 def _ensure_navigation_state(env) -> None:
     """Create device-local, per-environment navigation state on first use."""
     if not hasattr(env, "_track_points"):
@@ -66,7 +71,9 @@ def target_distance(env) -> torch.Tensor:
     return torch.linalg.vector_norm(displacement_xy, dim=-1, keepdim=True) * 0.1
 
 
-def reached_checkpoint(env, threshold: float = 1.0) -> torch.Tensor:
+def reached_checkpoint(
+    env, threshold: float = 1.0, ramp_steps: int = 0, min_scale: float = 1.0
+) -> torch.Tensor:
     """Advance one target after reaching or safely passing it.
 
     The pass test prevents a running robot from getting stuck when its root
@@ -90,26 +97,26 @@ def reached_checkpoint(env, threshold: float = 1.0) -> torch.Tensor:
     new_indices = env._next_target_idx.clamp(max=len(env.cfg.path_points) - 1)
     new_targets = env._track_points[new_indices]
     env._previous_target_distance = torch.linalg.vector_norm(new_targets - position_local, dim=-1)
-    return reached.float()
+    return reached.float() * _ramped_scale(env, ramp_steps, min_scale)
 
 
-def progress_reward(env) -> torch.Tensor:
+def progress_reward(env, ramp_steps: int = 0, min_scale: float = 1.0) -> torch.Tensor:
     """Reward only a reduction of distance to the currently active target."""
     _, _, displacement_xy = _target_data(env)
     distance = torch.linalg.vector_norm(displacement_xy, dim=-1)
     progress = (env._previous_target_distance - distance).clamp(min=0.0, max=0.5)
     env._previous_target_distance = distance
-    return progress
+    return progress * _ramped_scale(env, ramp_steps, min_scale)
 
 
-def alignment_reward(env) -> torch.Tensor:
+def alignment_reward(env, ramp_steps: int = 0, min_scale: float = 1.0) -> torch.Tensor:
     """Reward planar velocity that points towards the current target."""
     _, _, displacement_xy = _target_data(env)
     distance = torch.linalg.vector_norm(displacement_xy, dim=-1).clamp_min(1.0e-6)
     target_direction_xy = displacement_xy / distance.unsqueeze(-1)
     velocity_xy = env.scene["robot"].data.root_lin_vel_w[:, :2]
     forward_speed = (velocity_xy * target_direction_xy).sum(dim=-1)
-    return forward_speed.clamp(min=-1.0, max=2.0)
+    return forward_speed.clamp(min=-1.0, max=2.0) * _ramped_scale(env, ramp_steps, min_scale)
 
 
 def _course_tangent(env) -> torch.Tensor:
@@ -121,7 +128,7 @@ def _course_tangent(env) -> torch.Tensor:
     return tangent / torch.linalg.vector_norm(tangent, dim=-1, keepdim=True).clamp_min(1.0e-6)
 
 
-def course_heading_alignment(env) -> torch.Tensor:
+def course_heading_alignment(env, ramp_steps: int = 0, min_scale: float = 1.0) -> torch.Tensor:
     """Reward the robot's facing direction matching the track tangent.
 
     This closes the previous reward loophole where a robot could retain a
@@ -131,15 +138,20 @@ def course_heading_alignment(env) -> torch.Tensor:
     forward_b = torch.zeros((env.num_envs, 3), dtype=torch.float32, device=env.device)
     forward_b[:, 0] = 1.0
     forward_w = quat_apply(yaw_quat(robot.data.root_quat_w), forward_b)[:, :2]
-    return (forward_w * _course_tangent(env)).sum(dim=-1).clamp(min=-1.0, max=1.0)
+    return (forward_w * _course_tangent(env)).sum(dim=-1).clamp(min=-1.0, max=1.0) * _ramped_scale(
+        env, ramp_steps, min_scale
+    )
 
 
-def forward_course_speed(env) -> torch.Tensor:
+def forward_course_speed(env, ramp_steps: int = 0, min_scale: float = 1.0) -> torch.Tensor:
     """Reward track progress produced by forward, rather than lateral, motion."""
     robot = env.scene["robot"]
     velocity_b = quat_apply_inverse(yaw_quat(robot.data.root_quat_w), robot.data.root_lin_vel_w)
-    heading = course_heading_alignment(env).clamp_min(0.0)
-    return velocity_b[:, 0].clamp(min=-1.0, max=2.0) * heading
+    forward_b = torch.zeros((env.num_envs, 3), dtype=torch.float32, device=env.device)
+    forward_b[:, 0] = 1.0
+    forward_w = quat_apply(yaw_quat(robot.data.root_quat_w), forward_b)[:, :2]
+    heading = (forward_w * _course_tangent(env)).sum(dim=-1).clamp_min(0.0)
+    return velocity_b[:, 0].clamp(min=-1.0, max=2.0) * heading * _ramped_scale(env, ramp_steps, min_scale)
 
 
 def lateral_velocity_penalty(env) -> torch.Tensor:
@@ -149,12 +161,25 @@ def lateral_velocity_penalty(env) -> torch.Tensor:
     return torch.square(velocity_b[:, 1])
 
 
-def deviation_penalty(env) -> torch.Tensor:
-    """Penalize moving more than one metre from any generated track point."""
+def deviation_penalty(env, ramp_steps: int = 0, min_scale: float = 1.0) -> torch.Tensor:
+    """Penalize lateral distance from the active path segment.
+
+    This replaces an O(num_envs * 201) all-waypoint ``torch.cdist`` with an
+    O(num_envs) projection onto the segment being followed.  It is both a more
+    precise ordered-track metric and removes a repeated GPU allocation.
+    """
+    _ensure_navigation_state(env)
     position_local, _, _ = _target_data(env)
-    points = env._track_points.unsqueeze(0).expand(env.num_envs, -1, -1)
-    nearest_distance = torch.cdist(position_local.unsqueeze(1), points).squeeze(1).min(dim=1).values
-    return -(nearest_distance - 1.0).clamp_min(0.0)
+    current = env._next_target_idx.clamp(max=len(env.cfg.path_points) - 1)
+    previous = (current - 1).clamp_min(0)
+    start = env._track_points[previous]
+    end = env._track_points[current]
+    segment = end - start
+    segment_length_sq = torch.sum(torch.square(segment), dim=-1).clamp_min(1.0e-6)
+    projection = torch.sum((position_local - start) * segment, dim=-1) / segment_length_sq
+    closest = start + projection.clamp(0.0, 1.0).unsqueeze(-1) * segment
+    distance = torch.linalg.vector_norm(position_local - closest, dim=-1)
+    return -(distance - 1.0).clamp_min(0.0) * _ramped_scale(env, ramp_steps, min_scale)
 
 
 def alive_reward(env) -> torch.Tensor:
@@ -370,6 +395,16 @@ def stance_side_penalty(
     right_inward = (min_half_width + foot_offset_b[:, 1, 1]).clamp_min(0.0)
     moving = torch.linalg.vector_norm(robot.data.root_lin_vel_w[:, :2], dim=-1) > 0.1
     return (left_inward * in_contact[:, 0] + right_inward * in_contact[:, 1]) * moving * _training_ramp(env, ramp_steps)
+
+
+def contact_foot_velocity_penalty(env, sensor_cfg: SceneEntityCfg, asset_cfg: SceneEntityCfg) -> torch.Tensor:
+    """Penalize horizontal velocity of a contacting foot (RL Gym contact_no_vel)."""
+    contact_sensor: ContactSensor = env.scene.sensors[sensor_cfg.name]
+    robot = env.scene[asset_cfg.name]
+    in_contact = contact_sensor.data.current_contact_time[:, sensor_cfg.body_ids] > 0.0
+    foot_speed_sq = torch.sum(torch.square(robot.data.body_lin_vel_w[:, asset_cfg.body_ids, :2]), dim=-1)
+    moving = torch.linalg.vector_norm(robot.data.root_lin_vel_w[:, :2], dim=-1) > 0.1
+    return torch.sum(foot_speed_sq * in_contact, dim=1) * moving
 
 
 def crossed_feet_penalty(env, min_half_width: float, asset_cfg: SceneEntityCfg) -> torch.Tensor:
