@@ -255,3 +255,21 @@ def crossed_feet_penalty(env, min_half_width: float, asset_cfg: SceneEntityCfg) 
     foot_y_b = foot_offset_b.reshape(env.num_envs, -1, 3)[:, :, 1]
     # body_names are configured left then right below.
     return (min_half_width - foot_y_b[:, 0]).clamp_min(0.0) + (min_half_width + foot_y_b[:, 1]).clamp_min(0.0)
+
+
+def arm_swing_phase_reward(env, period: float, amplitude: float, std: float, asset_cfg: SceneEntityCfg) -> torch.Tensor:
+    """Reward a small, anti-phase shoulder-pitch swing during locomotion.
+
+    This term is intentionally used only by the separate 14-DoF experiment.
+    It provides a bounded, symmetric arm-motion prior while leaving the policy
+    free to reduce the motion when balance requires it.  The periodic phase is
+    per environment, matching the existing alternating-foot reward convention.
+    """
+    robot = env.scene[asset_cfg.name]
+    phase = 2.0 * torch.pi * env.episode_length_buf * env.step_dt / period
+    desired_left = amplitude * torch.sin(phase)
+    desired = torch.stack((desired_left, -desired_left), dim=-1)
+    joint_pos_rel = robot.data.joint_pos[:, asset_cfg.joint_ids] - robot.data.default_joint_pos[:, asset_cfg.joint_ids]
+    error = torch.sum(torch.square(joint_pos_rel - desired), dim=-1)
+    moving = torch.linalg.vector_norm(robot.data.root_lin_vel_w[:, :2], dim=-1) > 0.1
+    return torch.exp(-error / (std**2)) * moving

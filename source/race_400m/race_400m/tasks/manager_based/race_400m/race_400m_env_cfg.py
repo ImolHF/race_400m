@@ -30,6 +30,7 @@ from .mdp.rewards import (
     target_distance as _target_distance,
     swing_foot_clearance as _swing_foot_clearance,
     swing_foot_forward as _swing_foot_forward,
+    arm_swing_phase_reward as _arm_swing_phase_reward,
 )
 from .mdp.terminations import is_completed as _is_completed
 from .mdp.terminations import robot_fallen as _robot_fallen
@@ -70,6 +71,29 @@ class ActionsCfg:
     joint_pos = JointPositionActionCfg(
         asset_name="robot",
         joint_names=[".*_hip_.*", ".*_knee_joint", ".*_ankle_.*"],
+        scale=0.25,
+        use_default_offset=True,
+    )
+
+
+@configclass
+class ArmSwingActionsCfg:
+    """Leg actions plus the two shoulder-pitch joints for the arm experiment.
+
+    The first twelve selected joints use exactly the same expressions as the
+    baseline task.  This preserves their action ordering for partial loading
+    from a 12-DoF checkpoint; only the final two policy outputs are new.
+    """
+
+    joint_pos = JointPositionActionCfg(
+        asset_name="robot",
+        joint_names=[
+            ".*_hip_.*",
+            ".*_knee_joint",
+            ".*_ankle_.*",
+            "left_shoulder_pitch_joint",
+            "right_shoulder_pitch_joint",
+        ],
         scale=0.25,
         use_default_offset=True,
     )
@@ -197,6 +221,35 @@ class RewardsCfg:
 
 
 @configclass
+class ArmSwingRewardsCfg(RewardsCfg):
+    """Baseline race rewards plus conservative shoulder-swing shaping."""
+
+    arm_swing_phase = RewTerm(
+        func=_arm_swing_phase_reward,
+        weight=0.12,
+        params={
+            "period": 0.8,
+            "amplitude": 0.18,
+            "std": 0.20,
+            "asset_cfg": SceneEntityCfg(
+                "robot", joint_names=["left_shoulder_pitch_joint", "right_shoulder_pitch_joint"]
+            ),
+        },
+    )
+    # Keeps the learned swing modest.  The phase reward above still permits
+    # useful counter-swing, while this term prevents large arm flailing.
+    arm_deviation = RewTerm(
+        func=isaac_mdp.joint_deviation_l1,
+        weight=-0.03,
+        params={
+            "asset_cfg": SceneEntityCfg(
+                "robot", joint_names=["left_shoulder_pitch_joint", "right_shoulder_pitch_joint"]
+            )
+        },
+    )
+
+
+@configclass
 class EventsCfg:
     """Keep physical and navigation state synchronized on every reset."""
 
@@ -248,7 +301,17 @@ class RaceEnvCfg(ManagerBasedRLEnvCfg):
         self.sim.physx.gpu_max_num_partitions = 32
         # Keep contact history in sync with the physics step for gait rewards.
         self.scene.contact_forces.update_period = self.sim.dt
-
         track_cfg = TrackpointCfg()
         self.path_points = track_cfg.path_points
         print(f"[INFO] Fixed navigation track: {len(self.path_points)} targets, 0 m to 400 m.")
+
+
+@configclass
+class ArmSwingRaceEnvCfg(RaceEnvCfg):
+    """14-DoF experimental variant: legs plus both shoulder-pitch joints.
+
+    The original ``RaceEnvCfg`` remains the stable 12-DoF baseline.
+    """
+
+    actions: ArmSwingActionsCfg = ArmSwingActionsCfg()
+    rewards: ArmSwingRewardsCfg = ArmSwingRewardsCfg()
