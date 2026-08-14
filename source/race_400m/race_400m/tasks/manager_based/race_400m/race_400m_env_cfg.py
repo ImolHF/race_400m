@@ -63,31 +63,16 @@ class ObservationsCfg:
 
 @configclass
 class ActionsCfg:
-    """Leg actions plus bounded shoulder/elbow swing about the standing pose.
+    """Leg-only residual actions about G1's configured default standing pose.
 
-    The waist and wrists remain fixed.  This gives the policy enough arm motion
-    to counter hip yaw while preventing the upper body from becoming a second,
-    unconstrained locomotion strategy.
+    The upper body remains at its default target for this high-cadence
+    experiment, isolating the effects of lower-limb stiffness and step rate.
     """
 
     joint_pos = JointPositionActionCfg(
         asset_name="robot",
-        joint_names=[
-            ".*_hip_.*",
-            ".*_knee_joint",
-            ".*_ankle_.*",
-            ".*_shoulder_pitch_joint",
-            ".*_shoulder_roll_joint",
-            ".*_elbow_joint",
-        ],
-        scale={
-            ".*_hip_.*": 0.25,
-            ".*_knee_joint": 0.25,
-            ".*_ankle_.*": 0.20,
-            ".*_shoulder_pitch_joint": 0.20,
-            ".*_shoulder_roll_joint": 0.10,
-            ".*_elbow_joint": 0.15,
-        },
+        joint_names=[".*_hip_.*", ".*_knee_joint", ".*_ankle_.*"],
+        scale=0.25,
         use_default_offset=True,
     )
 
@@ -191,7 +176,10 @@ class RewardsCfg:
         func=_alternating_foot_gait,
         weight=0.15,
         params={
-            "period": 0.65,
+            # 0.55 s is a controlled increase from the previous 0.65 s gait
+            # period.  Step placement remains constrained by the compact-stride
+            # terms below, so speed comes from cadence rather than overstriding.
+            "period": 0.55,
             "offset": (0.0, 0.5),
             "threshold": 0.55,
             "sensor_cfg": SceneEntityCfg(
