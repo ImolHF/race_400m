@@ -138,40 +138,6 @@ Key metrics:
 - `Episode_Reward/swing_forward` and `forward_landing`: verify that airborne
   feet swing and land ahead of the pelvis in the robot's yaw frame.
 
-## Experimental: learned shoulder swing (14 DoF)
-
-The stable task remains `Template-Race-400m`: it controls only the twelve leg
-joints.  `Template-Race-400m-ArmSwing` is a separate experimental task that
-adds the left and right shoulder-pitch joints.  Waist and all other arm joints
-remain at their default pose.  It keeps all 201 ordered target coordinates and
-all existing gait rewards, then adds a small, bounded anti-phase shoulder-swing
-reward plus an arm-deviation penalty.
-
-Do not resume this task with `--resume` from a 12-DoF run: its action and
-observation spaces differ.  Instead, start a new optimizer state and partially
-initialize it from the best completed 12-DoF checkpoint:
-
-```bash
-torchrun --standalone --nproc_per_node=2 scripts/rsl_rl/train.py \
-  --task Template-Race-400m-ArmSwing --headless --distributed \
-  --num_envs 4096 --max_iterations 1500 --run_name arm_swing_finetune \
-  --load_legs_checkpoint /absolute/path/to/model_XXXX.pt
-```
-
-`--load_legs_checkpoint` copies all unchanged actor/critic layers, the first
-twelve action outputs, and the corresponding action-noise values.  It also
-preserves the old observation columns in the first actor layer.  Only the two
-new shoulder outputs and their two previous-action input paths start randomly;
-optimizer state is intentionally fresh.  The new logs are under
-`logs/rsl_rl/g1_track_400m_arm_swing/`.
-
-First run a 100- to 200-iteration comparison.  Keep the 12-DoF baseline as
-the rollback candidate unless the arm task improves full-lap completion,
-heading, lateral velocity, crossed-feet penalty, and falls simultaneously.
-Arm swing is not a substitute for the existing forward-facing and foot-placement
-constraints, and neither task is cleared for physical-robot use from this
-simulation result alone.
-
 ## References used for gait shaping
 
 - [Unitree RL Lab](https://github.com/unitreerobotics/unitree_rl_lab):

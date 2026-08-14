@@ -39,10 +39,3 @@ class PPORunnerCfg(RslRlOnPolicyRunnerCfg):
         desired_kl=0.01,
         max_grad_norm=1.0,
     )
-
-
-@configclass
-class ArmSwingPPORunnerCfg(PPORunnerCfg):
-    """Separate log namespace for the 14-DoF arm-swing experiment."""
-
-    experiment_name = "g1_track_400m_arm_swing"
