@@ -24,6 +24,7 @@ from .mdp.rewards import (
     forward_foot_landing as _forward_foot_landing,
     compact_stride_landing_penalty as _compact_stride_landing_penalty,
     excess_swing_time_penalty as _excess_swing_time_penalty,
+    foot_heading_penalty as _foot_heading_penalty,
     lateral_velocity_penalty as _lateral_velocity_penalty,
     progress_reward as _progress_reward,
     reached_checkpoint as _reached_checkpoint,
@@ -72,7 +73,7 @@ class ActionsCfg:
     joint_pos = JointPositionActionCfg(
         asset_name="robot",
         joint_names=[".*_hip_.*", ".*_knee_joint", ".*_ankle_.*"],
-        scale=0.25,
+        scale=0.22,
         use_default_offset=True,
     )
 
@@ -102,20 +103,20 @@ class RewardsCfg:
     base_height = RewTerm(func=isaac_mdp.base_height_l2, weight=-8.0, params={"target_height": 0.70})
     lin_vel_z = RewTerm(func=isaac_mdp.lin_vel_z_l2, weight=-2.0)
     ang_vel_xy = RewTerm(func=isaac_mdp.ang_vel_xy_l2, weight=-0.1)
-    joint_vel = RewTerm(func=isaac_mdp.joint_vel_l2, weight=-2.0e-4)
-    action_rate = RewTerm(func=isaac_mdp.action_rate_l2, weight=-0.01)
+    joint_vel = RewTerm(func=isaac_mdp.joint_vel_l2, weight=-8.0e-4)
+    action_rate = RewTerm(func=isaac_mdp.action_rate_l2, weight=-0.03)
     joint_pos_limits = RewTerm(func=isaac_mdp.joint_pos_limits, weight=-2.0)
 
     # Imported from Isaac Lab's official G1 velocity task.  These shape the
     # gait only; all waypoint, progress, and completion rewards stay intact.
     hip_deviation = RewTerm(
         func=isaac_mdp.joint_deviation_l1,
-        weight=-0.08,
+        weight=-0.15,
         params={"asset_cfg": SceneEntityCfg("robot", joint_names=[".*_hip_yaw_joint", ".*_hip_roll_joint"])},
     )
     joint_acc = RewTerm(
         func=isaac_mdp.joint_acc_l2,
-        weight=-1.0e-7,
+        weight=-3.0e-7,
         params={"asset_cfg": SceneEntityCfg("robot", joint_names=[".*_hip_.*", ".*_knee_joint"])},
     )
     joint_torques = RewTerm(
@@ -217,6 +218,16 @@ class RewardsCfg:
         weight=-3.0,
         params={
             "max_forward": 0.22,
+            "sensor_cfg": SceneEntityCfg(
+                "contact_forces", body_names=["left_ankle_roll_link", "right_ankle_roll_link"]
+            ),
+            "asset_cfg": SceneEntityCfg("robot", body_names=["left_ankle_roll_link", "right_ankle_roll_link"]),
+        },
+    )
+    foot_heading = RewTerm(
+        func=_foot_heading_penalty,
+        weight=-0.30,
+        params={
             "sensor_cfg": SceneEntityCfg(
                 "contact_forces", body_names=["left_ankle_roll_link", "right_ankle_roll_link"]
             ),
