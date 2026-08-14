@@ -64,16 +64,20 @@ class ObservationsCfg:
 
 @configclass
 class ActionsCfg:
-    """Leg-only residual actions about G1's configured default standing pose.
-
-    The upper body remains at its default target for this high-cadence
-    experiment, isolating the effects of lower-limb stiffness and step rate.
-    """
+    """Leg actions plus sagittal-plane arm swing with fixed 90-degree elbows."""
 
     joint_pos = JointPositionActionCfg(
         asset_name="robot",
-        joint_names=[".*_hip_.*", ".*_knee_joint", ".*_ankle_.*"],
-        scale=0.25,
+        joint_names=[".*_hip_.*", ".*_knee_joint", ".*_ankle_.*", ".*_shoulder_pitch_joint", ".*_elbow_joint"],
+        scale={
+            ".*_hip_.*": 0.25,
+            ".*_knee_joint": 0.25,
+            ".*_ankle_.*": 0.20,
+            ".*_shoulder_pitch_joint": 0.25,
+            # Retain the elbow target at its configured default (+1.57 rad)
+            # while preventing policy actions from changing it.
+            ".*_elbow_joint": 0.0,
+        },
         use_default_offset=True,
     )
 
@@ -100,8 +104,8 @@ class RewardsCfg:
     # A modestly lower trunk target gives the leg-only policy a small knee bend
     # while moving.  This reduces the center of mass and improves recovery
     # margin without forcing a deep squat that would harm forward progress.
-    base_height = RewTerm(func=isaac_mdp.base_height_l2, weight=-8.0, params={"target_height": 0.70})
-    lin_vel_z = RewTerm(func=isaac_mdp.lin_vel_z_l2, weight=-2.0)
+    base_height = RewTerm(func=isaac_mdp.base_height_l2, weight=-12.0, params={"target_height": 0.70})
+    lin_vel_z = RewTerm(func=isaac_mdp.lin_vel_z_l2, weight=-4.0)
     ang_vel_xy = RewTerm(func=isaac_mdp.ang_vel_xy_l2, weight=-0.1)
     joint_vel = RewTerm(func=isaac_mdp.joint_vel_l2, weight=-2.0e-4)
     action_rate = RewTerm(func=isaac_mdp.action_rate_l2, weight=-0.01)
@@ -145,6 +149,15 @@ class RewardsCfg:
         params={
             "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_ankle_roll_link"),
             "asset_cfg": SceneEntityCfg("robot", body_names=".*_ankle_roll_link"),
+        },
+    )
+    arm_posture = RewTerm(
+        func=isaac_mdp.joint_deviation_l1,
+        weight=-0.5,
+        params={
+            "asset_cfg": SceneEntityCfg(
+                "robot", joint_names=[".*_shoulder_roll_joint", ".*_shoulder_yaw_joint"]
+            )
         },
     )
     # Unitree RL Gym's contact_no_vel: a loaded foot should not translate or
@@ -253,9 +266,9 @@ class RewardsCfg:
     # the policy toward short, quick steps instead of hopping.
     excess_swing_time = RewTerm(
         func=_excess_swing_time_penalty,
-        weight=-0.35,
+        weight=-0.70,
         params={
-            "max_air_time": 0.24,
+            "max_air_time": 0.18,
             "sensor_cfg": SceneEntityCfg(
                 "contact_forces", body_names=["left_ankle_roll_link", "right_ankle_roll_link"]
             ),
@@ -263,9 +276,9 @@ class RewardsCfg:
     )
     compact_stride = RewTerm(
         func=_compact_stride_landing_penalty,
-        weight=-3.0,
+        weight=-5.0,
         params={
-            "max_forward": 0.22,
+            "max_forward": 0.17,
             "sensor_cfg": SceneEntityCfg(
                 "contact_forces", body_names=["left_ankle_roll_link", "right_ankle_roll_link"]
             ),
