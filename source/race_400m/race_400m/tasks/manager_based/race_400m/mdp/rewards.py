@@ -283,6 +283,30 @@ def contact_foot_velocity_penalty(env, sensor_cfg: SceneEntityCfg, asset_cfg: Sc
     return torch.sum(foot_vel_sq * in_contact, dim=1)
 
 
+def contact_foot_yaw_error(env, sensor_cfg: SceneEntityCfg, asset_cfg: SceneEntityCfg) -> torch.Tensor:
+    """Penalize a loaded foot whose forward axis points away from the pelvis.
+
+    The ankle-roll link's local +X axis is the model's forward axis.  Comparing
+    yaw-only orientations makes the term insensitive to normal ankle pitch
+    motion while directly suppressing toe-in/toe-out during stance.
+    """
+    contact_sensor: ContactSensor = env.scene.sensors[sensor_cfg.name]
+    robot = env.scene[asset_cfg.name]
+    in_contact = contact_sensor.data.current_contact_time[:, sensor_cfg.body_ids] > 0.0
+
+    foot_quat_w = robot.data.body_quat_w[:, asset_cfg.body_ids]
+    forward_local = torch.zeros_like(foot_quat_w[..., :3])
+    forward_local[..., 0] = 1.0
+    foot_yaw = yaw_quat(foot_quat_w.reshape(-1, 4))
+    foot_forward_w = quat_apply(foot_yaw, forward_local.reshape(-1, 3)).reshape(env.num_envs, -1, 3)
+
+    base_forward_local = torch.zeros((env.num_envs, 3), device=env.device)
+    base_forward_local[:, 0] = 1.0
+    base_forward_w = quat_apply(yaw_quat(robot.data.root_quat_w), base_forward_local).unsqueeze(1)
+    alignment = torch.sum(foot_forward_w[:, :, :2] * base_forward_w[:, :, :2], dim=-1).clamp(-1.0, 1.0)
+    return torch.sum((1.0 - alignment) * in_contact, dim=1)
+
+
 def crossed_feet_penalty(env, min_half_width: float, asset_cfg: SceneEntityCfg) -> torch.Tensor:
     """Penalize feet entering the wrong side of the robot's yaw frame.
 

@@ -24,6 +24,7 @@ from .mdp.rewards import (
     forward_foot_landing as _forward_foot_landing,
     compact_stride_landing_penalty as _compact_stride_landing_penalty,
     contact_foot_velocity_penalty as _contact_foot_velocity_penalty,
+    contact_foot_yaw_error as _contact_foot_yaw_error,
     excess_swing_time_penalty as _excess_swing_time_penalty,
     lateral_velocity_penalty as _lateral_velocity_penalty,
     progress_reward as _progress_reward,
@@ -156,6 +157,21 @@ class RewardsCfg:
             "asset_cfg": SceneEntityCfg("robot", body_names=".*_ankle_roll_link"),
         },
     )
+    # Keep each loaded foot parallel to the pelvis/track heading.  This is a
+    # direct toe-in/toe-out cost and is deliberately contact-gated so swing
+    # clearance and foot placement are not constrained.
+    foot_yaw = RewTerm(
+        func=_contact_foot_yaw_error,
+        weight=-1.25,
+        params={
+            "sensor_cfg": SceneEntityCfg(
+                "contact_forces", body_names=["left_ankle_roll_link", "right_ankle_roll_link"]
+            ),
+            "asset_cfg": SceneEntityCfg(
+                "robot", body_names=["left_ankle_roll_link", "right_ankle_roll_link"]
+            ),
+        },
+    )
     # Standard Isaac Lab undesired-contact term.  With self-collision enabled,
     # a knee or hip link striking the floor or another body is explicitly
     # costly instead of being an exploitable way to stabilize the policy.
@@ -176,10 +192,10 @@ class RewardsCfg:
         func=_alternating_foot_gait,
         weight=0.15,
         params={
-            # 0.55 s is a controlled increase from the previous 0.65 s gait
+            # 0.50 s is a controlled increase from the previous 0.55 s gait
             # period.  Step placement remains constrained by the compact-stride
             # terms below, so speed comes from cadence rather than overstriding.
-            "period": 0.55,
+            "period": 0.50,
             "offset": (0.0, 0.5),
             "threshold": 0.55,
             "sensor_cfg": SceneEntityCfg(
