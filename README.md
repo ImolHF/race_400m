@@ -148,6 +148,10 @@ Key metrics:
   knee collapse toward the body midline, and a narrow double-support stance.
   All are measured in the torso yaw frame. Hip/knee damping is now 10.0 and
   the action scale is 0.22 to reduce oscillatory, rubber-like joint motion.
+  `stance_side` applies the minimum side-distance to each individual support
+  foot, including single-support phases. These four alignment constraints ramp
+  linearly over the first 9,600 environment steps (about 400 PPO iterations)
+  of each fine-tuning run, so the existing running policy can adapt first.
 
 ## References used for gait shaping
 
