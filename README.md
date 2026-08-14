@@ -143,11 +143,10 @@ Key metrics:
   constraints. Air time beyond 0.24 s and touchdown more than 0.22 m ahead of
   the pelvis are penalized. The gait schedule is 0.65 s and swing clearance
   target is 0.06 m, reducing hopping and vertical excursion.
-- `Episode_Reward/toe_forward`, `knee_valgus`, and `minimum_stance_width`:
-  direct lower-limb alignment metrics. They penalize toe-in/toe-out at stance,
-  knee collapse toward the body midline, and a narrow double-support stance.
-  All are measured in the torso yaw frame. Hip/knee damping is now 10.0 and
-  the action scale is 0.22 to reduce oscillatory, rubber-like joint motion.
+- `Episode_Reward/foot_heading`: stance-foot forward-axis alignment with the
+  torso yaw. It is the direct toe-in/toe-out metric; it should decrease while
+  completion and forward progress are preserved. Hip/knee damping is now 10.0
+  and the action scale is 0.22 to reduce oscillatory, rubber-like joint motion.
 
 ## References used for gait shaping
 

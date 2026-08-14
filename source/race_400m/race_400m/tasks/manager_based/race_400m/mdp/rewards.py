@@ -295,50 +295,6 @@ def foot_heading_penalty(env, sensor_cfg: SceneEntityCfg, asset_cfg: SceneEntity
     return torch.sum(alignment_error * in_contact, dim=1) * moving
 
 
-def knee_valgus_penalty(env, asset_cfg: SceneEntityCfg, tolerance: float) -> torch.Tensor:
-    """Penalize knees collapsing inward relative to their hip-to-ankle line.
-
-    ``asset_cfg`` bodies must be ordered left hip, left knee, left ankle,
-    right hip, right knee, right ankle.  All geometry is evaluated in the
-    robot yaw frame, so the constraint stays valid around the 400 m track.
-    """
-    robot = env.scene[asset_cfg.name]
-    positions_w = robot.data.body_pos_w[:, asset_cfg.body_ids] - robot.data.root_pos_w.unsqueeze(1)
-    yaw = yaw_quat(robot.data.root_quat_w)
-    positions_b = quat_apply_inverse(
-        yaw.unsqueeze(1).expand(-1, positions_w.shape[1], -1).reshape(-1, 4), positions_w.reshape(-1, 3)
-    ).reshape(env.num_envs, -1, 3)
-    left_hip, left_knee, left_ankle, right_hip, right_knee, right_ankle = positions_b.unbind(dim=1)
-
-    def _line_y(hip: torch.Tensor, knee: torch.Tensor, ankle: torch.Tensor) -> torch.Tensor:
-        fraction = ((hip[:, 2] - knee[:, 2]) / (hip[:, 2] - ankle[:, 2]).clamp_min(1.0e-4)).clamp(0.0, 1.0)
-        return hip[:, 1] + fraction * (ankle[:, 1] - hip[:, 1])
-
-    left_line_y = _line_y(left_hip, left_knee, left_ankle)
-    right_line_y = _line_y(right_hip, right_knee, right_ankle)
-    # In the yaw frame, positive y is the left side.  A left knee moving right
-    # of its leg line, or a right knee moving left, is valgus collapse.
-    left_valgus = (left_line_y - left_knee[:, 1] - tolerance).clamp_min(0.0)
-    right_valgus = (right_knee[:, 1] - right_line_y - tolerance).clamp_min(0.0)
-    moving = torch.linalg.vector_norm(robot.data.root_lin_vel_w[:, :2], dim=-1) > 0.1
-    return (torch.square(left_valgus) + torch.square(right_valgus)) * moving
-
-
-def minimum_stance_width_penalty(env, min_width: float, sensor_cfg: SceneEntityCfg, asset_cfg: SceneEntityCfg) -> torch.Tensor:
-    """Penalize double-support feet whose lateral separation is too narrow."""
-    contact_sensor: ContactSensor = env.scene.sensors[sensor_cfg.name]
-    robot = env.scene[asset_cfg.name]
-    foot_offset_w = robot.data.body_pos_w[:, asset_cfg.body_ids] - robot.data.root_pos_w.unsqueeze(1)
-    yaw = yaw_quat(robot.data.root_quat_w)
-    foot_offset_b = quat_apply_inverse(
-        yaw.unsqueeze(1).expand(-1, foot_offset_w.shape[1], -1).reshape(-1, 4), foot_offset_w.reshape(-1, 3)
-    ).reshape(env.num_envs, -1, 3)
-    stance_width = foot_offset_b[:, 0, 1] - foot_offset_b[:, 1, 1]
-    double_support = torch.all(contact_sensor.data.current_contact_time[:, sensor_cfg.body_ids] > 0.0, dim=1)
-    moving = torch.linalg.vector_norm(robot.data.root_lin_vel_w[:, :2], dim=-1) > 0.1
-    return torch.square((min_width - stance_width).clamp_min(0.0)) * double_support * moving
-
-
 def crossed_feet_penalty(env, min_half_width: float, asset_cfg: SceneEntityCfg) -> torch.Tensor:
     """Penalize feet entering the wrong side of the robot's yaw frame.
 
