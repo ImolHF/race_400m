@@ -139,6 +139,10 @@ Key metrics:
   feet swing and land ahead of the pelvis in the robot's yaw frame.
 - `Episode_Reward/base_height`: the target is now 0.70 m (previously 0.74 m)
   so the policy learns a modest knee bend and a lower moving center of mass.
+- `Episode_Reward/excess_swing_time` and `compact_stride`: compact-gait
+  constraints. Air time beyond 0.24 s and touchdown more than 0.22 m ahead of
+  the pelvis are penalized. The gait schedule is 0.65 s and swing clearance
+  target is 0.06 m, reducing hopping and vertical excursion.
 
 ## References used for gait shaping
 

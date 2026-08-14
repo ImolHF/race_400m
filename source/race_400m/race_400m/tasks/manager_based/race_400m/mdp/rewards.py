@@ -241,6 +241,34 @@ def forward_foot_landing(env, sensor_cfg: SceneEntityCfg, asset_cfg: SceneEntity
     return ((relative_position_b[:, :, 0] - min_forward).clamp(min=0.0, max=0.4) * first_contact).sum(dim=1) * moving
 
 
+def excess_swing_time_penalty(env, max_air_time: float, sensor_cfg: SceneEntityCfg) -> torch.Tensor:
+    """Penalize a foot remaining airborne beyond the compact-gait limit."""
+    contact_sensor: ContactSensor = env.scene.sensors[sensor_cfg.name]
+    air_time = contact_sensor.data.current_air_time[:, sensor_cfg.body_ids]
+    moving = torch.linalg.vector_norm(env.scene["robot"].data.root_lin_vel_w[:, :2], dim=-1) > 0.1
+    return torch.sum((air_time - max_air_time).clamp_min(0.0), dim=1) * moving
+
+
+def compact_stride_landing_penalty(
+    env, sensor_cfg: SceneEntityCfg, asset_cfg: SceneEntityCfg, max_forward: float
+) -> torch.Tensor:
+    """Penalize touchdown far ahead of the pelvis, which creates long strides."""
+    contact_sensor: ContactSensor = env.scene.sensors[sensor_cfg.name]
+    robot = env.scene[asset_cfg.name]
+    first_contact = contact_sensor.compute_first_contact(env.step_dt)[:, sensor_cfg.body_ids]
+    relative_position_w = robot.data.body_pos_w[:, asset_cfg.body_ids] - robot.data.root_pos_w.unsqueeze(1)
+    yaw = yaw_quat(robot.data.root_quat_w)
+    relative_position_b = quat_apply_inverse(
+        yaw.unsqueeze(1).expand(-1, relative_position_w.shape[1], -1).reshape(-1, 4),
+        relative_position_w.reshape(-1, 3),
+    ).reshape(env.num_envs, -1, 3)
+    # Landing a little ahead is still allowed by forward_foot_landing.  This
+    # term only activates beyond the compact 0.22 m stride target.
+    over_stride = (relative_position_b[:, :, 0] - max_forward).clamp_min(0.0)
+    moving = torch.linalg.vector_norm(robot.data.root_lin_vel_w[:, :2], dim=-1) > 0.1
+    return torch.sum(torch.square(over_stride) * first_contact, dim=1) * moving
+
+
 def crossed_feet_penalty(env, min_half_width: float, asset_cfg: SceneEntityCfg) -> torch.Tensor:
     """Penalize feet entering the wrong side of the robot's yaw frame.
 

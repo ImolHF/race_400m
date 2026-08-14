@@ -22,6 +22,8 @@ from .mdp.rewards import (
     feet_air_time_positive_biped as _feet_air_time_positive_biped,
     forward_course_speed as _forward_course_speed,
     forward_foot_landing as _forward_foot_landing,
+    compact_stride_landing_penalty as _compact_stride_landing_penalty,
+    excess_swing_time_penalty as _excess_swing_time_penalty,
     lateral_velocity_penalty as _lateral_velocity_penalty,
     progress_reward as _progress_reward,
     reached_checkpoint as _reached_checkpoint,
@@ -98,7 +100,7 @@ class RewardsCfg:
     # while moving.  This reduces the center of mass and improves recovery
     # margin without forcing a deep squat that would harm forward progress.
     base_height = RewTerm(func=isaac_mdp.base_height_l2, weight=-8.0, params={"target_height": 0.70})
-    lin_vel_z = RewTerm(func=isaac_mdp.lin_vel_z_l2, weight=-1.0)
+    lin_vel_z = RewTerm(func=isaac_mdp.lin_vel_z_l2, weight=-2.0)
     ang_vel_xy = RewTerm(func=isaac_mdp.ang_vel_xy_l2, weight=-0.1)
     joint_vel = RewTerm(func=isaac_mdp.joint_vel_l2, weight=-2.0e-4)
     action_rate = RewTerm(func=isaac_mdp.action_rate_l2, weight=-0.01)
@@ -123,10 +125,10 @@ class RewardsCfg:
     )
     feet_air_time = RewTerm(
         func=_feet_air_time_positive_biped,
-        weight=0.5,
+        weight=0.10,
         params={
             "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_ankle_roll_link"),
-            "threshold": 0.4,
+            "threshold": 0.22,
         },
     )
     feet_slide = RewTerm(
@@ -144,7 +146,7 @@ class RewardsCfg:
         func=_alternating_foot_gait,
         weight=0.15,
         params={
-            "period": 0.8,
+            "period": 0.65,
             "offset": (0.0, 0.5),
             "threshold": 0.55,
             "sensor_cfg": SceneEntityCfg(
@@ -156,7 +158,7 @@ class RewardsCfg:
         func=_swing_foot_clearance,
         weight=0.08,
         params={
-            "target_height": 0.10,
+            "target_height": 0.06,
             "sensor_cfg": SceneEntityCfg(
                 "contact_forces", body_names=["left_ankle_roll_link", "right_ankle_roll_link"]
             ),
@@ -191,6 +193,30 @@ class RewardsCfg:
         weight=0.40,
         params={
             "min_forward": 0.03,
+            "sensor_cfg": SceneEntityCfg(
+                "contact_forces", body_names=["left_ankle_roll_link", "right_ankle_roll_link"]
+            ),
+            "asset_cfg": SceneEntityCfg("robot", body_names=["left_ankle_roll_link", "right_ankle_roll_link"]),
+        },
+    )
+    # Compact running: discourage long airborne phases and large touchdown
+    # reach.  Together with the faster alternating-contact period, these steer
+    # the policy toward short, quick steps instead of hopping.
+    excess_swing_time = RewTerm(
+        func=_excess_swing_time_penalty,
+        weight=-0.35,
+        params={
+            "max_air_time": 0.24,
+            "sensor_cfg": SceneEntityCfg(
+                "contact_forces", body_names=["left_ankle_roll_link", "right_ankle_roll_link"]
+            ),
+        },
+    )
+    compact_stride = RewTerm(
+        func=_compact_stride_landing_penalty,
+        weight=-3.0,
+        params={
+            "max_forward": 0.22,
             "sensor_cfg": SceneEntityCfg(
                 "contact_forces", body_names=["left_ankle_roll_link", "right_ankle_roll_link"]
             ),
