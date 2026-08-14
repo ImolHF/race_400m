@@ -269,6 +269,20 @@ def compact_stride_landing_penalty(
     return torch.sum(torch.square(over_stride) * first_contact, dim=1) * moving
 
 
+def contact_foot_velocity_penalty(env, sensor_cfg: SceneEntityCfg, asset_cfg: SceneEntityCfg) -> torch.Tensor:
+    """RL Gym's ``contact_no_vel`` adapted to Isaac Lab contact sensors.
+
+    A support foot should be stationary in all three Cartesian directions.
+    This is complementary to planar foot-slide shaping: it also discourages a
+    bouncing or twisting foot at touchdown.
+    """
+    contact_sensor: ContactSensor = env.scene.sensors[sensor_cfg.name]
+    robot = env.scene[asset_cfg.name]
+    in_contact = contact_sensor.data.current_contact_time[:, sensor_cfg.body_ids] > 0.0
+    foot_vel_sq = torch.sum(torch.square(robot.data.body_lin_vel_w[:, asset_cfg.body_ids]), dim=-1)
+    return torch.sum(foot_vel_sq * in_contact, dim=1)
+
+
 def crossed_feet_penalty(env, min_half_width: float, asset_cfg: SceneEntityCfg) -> torch.Tensor:
     """Penalize feet entering the wrong side of the robot's yaw frame.
 

@@ -23,6 +23,7 @@ from .mdp.rewards import (
     forward_course_speed as _forward_course_speed,
     forward_foot_landing as _forward_foot_landing,
     compact_stride_landing_penalty as _compact_stride_landing_penalty,
+    contact_foot_velocity_penalty as _contact_foot_velocity_penalty,
     excess_swing_time_penalty as _excess_swing_time_penalty,
     lateral_velocity_penalty as _lateral_velocity_penalty,
     progress_reward as _progress_reward,
@@ -105,6 +106,13 @@ class RewardsCfg:
     joint_vel = RewTerm(func=isaac_mdp.joint_vel_l2, weight=-2.0e-4)
     action_rate = RewTerm(func=isaac_mdp.action_rate_l2, weight=-0.01)
     joint_pos_limits = RewTerm(func=isaac_mdp.joint_pos_limits, weight=-2.0)
+    # The official G1 task applies an extra ankle-limit cost because ankle
+    # saturation is a common precursor to unstable landings and inward knees.
+    ankle_pos_limits = RewTerm(
+        func=isaac_mdp.joint_pos_limits,
+        weight=-1.0,
+        params={"asset_cfg": SceneEntityCfg("robot", joint_names=[".*_ankle_pitch_joint", ".*_ankle_roll_joint"])} ,
+    )
 
     # Imported from Isaac Lab's official G1 velocity task.  These shape the
     # gait only; all waypoint, progress, and completion rewards stay intact.
@@ -137,6 +145,29 @@ class RewardsCfg:
         params={
             "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_ankle_roll_link"),
             "asset_cfg": SceneEntityCfg("robot", body_names=".*_ankle_roll_link"),
+        },
+    )
+    # Unitree RL Gym's contact_no_vel: a loaded foot should not translate or
+    # bounce.  This reduces stance-leg wobble without prescribing a stride.
+    contact_no_vel = RewTerm(
+        func=_contact_foot_velocity_penalty,
+        weight=-0.04,
+        params={
+            "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_ankle_roll_link"),
+            "asset_cfg": SceneEntityCfg("robot", body_names=".*_ankle_roll_link"),
+        },
+    )
+    # Standard Isaac Lab undesired-contact term.  With self-collision enabled,
+    # a knee or hip link striking the floor or another body is explicitly
+    # costly instead of being an exploitable way to stabilize the policy.
+    undesired_leg_contacts = RewTerm(
+        func=isaac_mdp.undesired_contacts,
+        weight=-1.0,
+        params={
+            "threshold": 1.0,
+            "sensor_cfg": SceneEntityCfg(
+                "contact_forces", body_names=[".*_hip_.*_link", ".*_knee_link"]
+            ),
         },
     )
     # Unitree RL Lab and Unitree RL Mjlab both use an explicit alternating

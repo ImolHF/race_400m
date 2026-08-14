@@ -87,6 +87,12 @@ allowed to pass through one another during training. This changes the contact
 dynamics, so do not continue a checkpoint that visibly used leg penetration;
 start a fresh run from the compact-gait configuration instead.
 
+The compact-gait reward set also includes compatible posture/stability terms
+adapted from Unitree RL Gym and Isaac Lab: contact-foot velocity, extra ankle
+soft-limit cost, and a non-foot (hip/knee) contact penalty. These complement
+the existing G1 hip-neutral, contact-phase, swing-clearance, foot-slide,
+joint-acceleration, and torque terms rather than duplicating them.
+
 ## Recommended: gait-quality fine-tuning
 
 If you already have a checkpoint that completes the lap, fine-tune it instead
