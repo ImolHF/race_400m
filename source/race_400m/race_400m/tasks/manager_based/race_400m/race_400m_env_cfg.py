@@ -25,6 +25,8 @@ from .mdp.rewards import (
     compact_stride_landing_penalty as _compact_stride_landing_penalty,
     excess_swing_time_penalty as _excess_swing_time_penalty,
     foot_heading_penalty as _foot_heading_penalty,
+    knee_valgus_penalty as _knee_valgus_penalty,
+    minimum_stance_width_penalty as _minimum_stance_width_penalty,
     lateral_velocity_penalty as _lateral_velocity_penalty,
     progress_reward as _progress_reward,
     reached_checkpoint as _reached_checkpoint,
@@ -172,7 +174,7 @@ class RewardsCfg:
         func=_crossed_feet_penalty,
         weight=-0.5,
         params={
-            "min_half_width": 0.04,
+            "min_half_width": 0.08,
             "asset_cfg": SceneEntityCfg("robot", body_names=["left_ankle_roll_link", "right_ankle_roll_link"]),
         },
     )
@@ -224,10 +226,39 @@ class RewardsCfg:
             "asset_cfg": SceneEntityCfg("robot", body_names=["left_ankle_roll_link", "right_ankle_roll_link"]),
         },
     )
-    foot_heading = RewTerm(
+    toe_forward = RewTerm(
         func=_foot_heading_penalty,
-        weight=-0.30,
+        weight=-0.60,
         params={
+            "sensor_cfg": SceneEntityCfg(
+                "contact_forces", body_names=["left_ankle_roll_link", "right_ankle_roll_link"]
+            ),
+            "asset_cfg": SceneEntityCfg("robot", body_names=["left_ankle_roll_link", "right_ankle_roll_link"]),
+        },
+    )
+    knee_valgus = RewTerm(
+        func=_knee_valgus_penalty,
+        weight=-12.0,
+        params={
+            "tolerance": 0.015,
+            "asset_cfg": SceneEntityCfg(
+                "robot",
+                body_names=[
+                    "left_hip_roll_link",
+                    "left_knee_link",
+                    "left_ankle_roll_link",
+                    "right_hip_roll_link",
+                    "right_knee_link",
+                    "right_ankle_roll_link",
+                ],
+            ),
+        },
+    )
+    minimum_stance_width = RewTerm(
+        func=_minimum_stance_width_penalty,
+        weight=-8.0,
+        params={
+            "min_width": 0.20,
             "sensor_cfg": SceneEntityCfg(
                 "contact_forces", body_names=["left_ankle_roll_link", "right_ankle_roll_link"]
             ),
