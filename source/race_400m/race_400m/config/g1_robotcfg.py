@@ -29,7 +29,10 @@ G1_CONFIG = ArticulationCfg(
             max_depenetration_velocity=10.0,
         ),
         articulation_props=sim_utils.ArticulationRootPropertiesCfg(
-            enabled_self_collisions=False,
+            # A real G1 cannot pass one leg through the other.  Keeping this
+            # enabled closes the reward-exploitation loophole that produced
+            # knee/leg mesh penetration in the previous policies.
+            enabled_self_collisions=True,
             solver_position_iteration_count=8,
             solver_velocity_iteration_count=4,
         ),

@@ -80,6 +80,13 @@ This creates logs under:
 logs/rsl_rl/g1_track_400m/<timestamp>_race_from_scratch/
 ```
 
+## Safety note: self-collision is enabled
+
+The G1 articulation now uses PhysX self-collision. Legs are therefore not
+allowed to pass through one another during training. This changes the contact
+dynamics, so do not continue a checkpoint that visibly used leg penetration;
+start a fresh run from the compact-gait configuration instead.
+
 ## Recommended: gait-quality fine-tuning
 
 If you already have a checkpoint that completes the lap, fine-tune it instead
