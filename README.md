@@ -164,6 +164,29 @@ First inspect the checkpoint at 300 iterations. Continue only if completion
 does not fall and the average track-forward speed increases; otherwise keep
 the original completion model as the deployment baseline.
 
+## Smooth start and controlled stop
+
+`Template-Race-400m-LegOnly-StartStop` starts from the normal default standing
+pose; it does not use a separate crouch or launch pose. The policy receives one
+extra desired-speed observation: it ramps from a small positive speed across
+the first 20 m, holds a `1.8 m/s` cruise command, then ramps to zero across the
+last 24 m. Passing the final point is not sufficient: success requires an
+upright, planar-speed-below-`0.18 m/s` stand for `1.5 s`.
+
+The extra phase observation changes the interface from **82 to 83
+observations**, so do not resume a prior 12-action / 82-observation policy.
+Train this task from scratch:
+
+```bash
+torchrun --standalone --nproc_per_node=2 scripts/rsl_rl/train.py \
+  --task Template-Race-400m-LegOnly-StartStop --headless --distributed \
+  --num_envs 4096 --max_iterations 8000 --run_name leg_only_start_stop
+```
+
+Before considering deployment, verify in playback that the robot begins from
+the default stand without a lunge, decelerates before the red finish marker,
+and remains upright for the full hold interval.
+
 ## Recommended: gait-quality fine-tuning
 
 If you already have a 12-action checkpoint that completes the lap, fine-tune

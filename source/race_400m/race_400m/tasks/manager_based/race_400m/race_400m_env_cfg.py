@@ -16,6 +16,8 @@ from .mdp.rewards import (
     alignment_reward as _alignment_reward,
     alive_reward as _alive_reward,
     deviation_penalty as _deviation_penalty,
+    desired_course_speed as _desired_course_speed,
+    finish_stability_reward as _finish_stability_reward,
     alternating_foot_gait as _alternating_foot_gait,
     crossed_feet_penalty as _crossed_feet_penalty,
     course_heading_alignment as _course_heading_alignment,
@@ -30,6 +32,7 @@ from .mdp.rewards import (
     arm_counter_swing_penalty as _arm_counter_swing_penalty,
     lateral_velocity_penalty as _lateral_velocity_penalty,
     progress_reward as _progress_reward,
+    phase_speed_tracking as _phase_speed_tracking,
     reached_checkpoint as _reached_checkpoint,
     reset_path_progress as _reset_path_progress,
     target_direction as _target_direction,
@@ -39,6 +42,7 @@ from .mdp.rewards import (
     rear_swing_foot_penalty as _rear_swing_foot_penalty,
 )
 from .mdp.terminations import is_completed as _is_completed
+from .mdp.terminations import is_completed_after_stop as _is_completed_after_stop
 from .mdp.terminations import robot_fallen as _robot_fallen
 from .track_scene_cfg import TrackSceneCfg, TrackpointCfg
 
@@ -61,6 +65,21 @@ class ObservationsCfg:
         def __post_init__(self):
             self.enable_corruption = False
             self.concatenate_terms = True
+
+    policy: PolicyCfg = PolicyCfg()
+
+
+@configclass
+class StartStopObservationsCfg(ObservationsCfg):
+    """Leg-only proprioception plus the race-phase speed command."""
+
+    @configclass
+    class PolicyCfg(ObservationsCfg.PolicyCfg):
+        desired_course_speed = ObsTerm(
+            func=_desired_course_speed,
+            params={"cruise_speed": 1.8, "start_points": 10, "stop_points": 12},
+            scale=0.5,
+        )
 
     policy: PolicyCfg = PolicyCfg()
 
@@ -436,6 +455,26 @@ class LegOnlyHighCadenceRewardsCfg(LegOnlyRewardsCfg):
 
 
 @configclass
+class LegOnlyStartStopRewardsCfg(LegOnlyHighCadenceRewardsCfg):
+    """High-cadence gait rewards plus start, brake, and stable-stop shaping."""
+
+    # Raw speed always rewards acceleration and conflicts with braking.  This
+    # phase-tracking term replaces it with a command that ramps from standing,
+    # cruises, then reaches zero before the final target.
+    forward_course_speed = None
+    phase_speed_tracking = RewTerm(
+        func=_phase_speed_tracking,
+        weight=2.5,
+        params={"cruise_speed": 1.8, "start_points": 10, "stop_points": 12, "std": 0.55},
+    )
+    finish_stability = RewTerm(
+        func=_finish_stability_reward,
+        weight=2.0,
+        params={"speed_threshold": 0.18, "tilt_threshold": 0.20},
+    )
+
+
+@configclass
 class EventsCfg:
     """Keep physical and navigation state synchronized on every reset."""
 
@@ -448,6 +487,16 @@ class TerminationsCfg:
     time_out = DoneTerm(func="isaaclab.envs.mdp:time_out", time_out=True)
     robot_fallen = DoneTerm(func=_robot_fallen, params={"asset_cfg": SceneEntityCfg("robot")})
     completed = DoneTerm(func=_is_completed)
+
+
+@configclass
+class StartStopTerminationsCfg(TerminationsCfg):
+    """Delay successful completion until the robot is safely stationary."""
+
+    completed = DoneTerm(
+        func=_is_completed_after_stop,
+        params={"hold_time_s": 1.5, "speed_threshold": 0.18, "tilt_threshold": 0.20},
+    )
 
 
 @configclass
@@ -506,3 +555,12 @@ class LegOnlyHighCadenceRaceEnvCfg(LegOnlyRaceEnvCfg):
     """12-action speed fine-tuning task compatible with leg-only checkpoints."""
 
     rewards: LegOnlyHighCadenceRewardsCfg = LegOnlyHighCadenceRewardsCfg()
+
+
+@configclass
+class LegOnlyStartStopRaceEnvCfg(LegOnlyHighCadenceRaceEnvCfg):
+    """From-default-stand start, cruise, braking, and stable-stop task."""
+
+    observations: StartStopObservationsCfg = StartStopObservationsCfg()
+    rewards: LegOnlyStartStopRewardsCfg = LegOnlyStartStopRewardsCfg()
+    terminations: StartStopTerminationsCfg = StartStopTerminationsCfg()

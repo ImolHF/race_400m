@@ -15,6 +15,7 @@ def _ensure_navigation_state(env) -> None:
         env._track_points = torch.as_tensor(env.cfg.path_points, dtype=torch.float32, device=env.device)
         env._next_target_idx = torch.zeros(env.num_envs, dtype=torch.long, device=env.device)
         env._previous_target_distance = torch.zeros(env.num_envs, dtype=torch.float32, device=env.device)
+        env._finish_stable_time = torch.zeros(env.num_envs, dtype=torch.float32, device=env.device)
 
 
 def reset_path_progress(env, env_ids: torch.Tensor | None) -> None:
@@ -25,6 +26,7 @@ def reset_path_progress(env, env_ids: torch.Tensor | None) -> None:
     # Target zero is the robot's reset position.  Starting at target one avoids
     # granting a checkpoint reward before the policy has taken an action.
     env._next_target_idx[env_ids] = 1
+    env._finish_stable_time[env_ids] = 0.0
     robot = env.scene["robot"]
     position_local = robot.data.root_pos_w[env_ids, :2] - env.scene.env_origins[env_ids, :2]
     target = env._track_points[1]
@@ -57,6 +59,46 @@ def target_distance(env) -> torch.Tensor:
     """Distance to the active target, supplied as a one-value policy observation."""
     _, _, displacement_xy = _target_data(env)
     return torch.linalg.vector_norm(displacement_xy, dim=-1, keepdim=True) * 0.1
+
+
+def desired_course_speed(
+    env, cruise_speed: float = 1.8, start_points: int = 10, stop_points: int = 12
+) -> torch.Tensor:
+    """Return the phase-dependent forward-speed command for start and stop.
+
+    The robot begins in its normal standing pose.  The command starts at a
+    small positive value, ramps over the first 20 m, stays at cruise speed,
+    and ramps down over the final 24 m.  Once the final waypoint is crossed,
+    the command is exactly zero so the same policy learns to stand still.
+    """
+    _ensure_navigation_state(env)
+    point_count = len(env.cfg.path_points)
+    index = env._next_target_idx.to(dtype=torch.float32)
+    start = 0.15 + 0.85 * ((index - 1.0) / float(start_points)).clamp(0.0, 1.0)
+    stop = ((float(point_count) - index) / float(stop_points)).clamp(0.0, 1.0)
+    command = cruise_speed * torch.minimum(start, stop)
+    command = torch.where(index >= point_count, torch.zeros_like(command), command)
+    return command.unsqueeze(-1)
+
+
+def phase_speed_tracking(
+    env, cruise_speed: float = 1.8, start_points: int = 10, stop_points: int = 12, std: float = 0.55
+) -> torch.Tensor:
+    """Reward track-tangent speed tracking for smooth acceleration and braking."""
+    command = desired_course_speed(env, cruise_speed, start_points, stop_points).squeeze(-1)
+    actual_speed = (env.scene["robot"].data.root_lin_vel_w[:, :2] * _course_tangent(env)).sum(dim=-1)
+    return torch.exp(-torch.square(actual_speed - command) / (std * std))
+
+
+def finish_stability_reward(env, speed_threshold: float = 0.18, tilt_threshold: float = 0.20) -> torch.Tensor:
+    """Reward the post-finish state only when the robot is upright and stopped."""
+    _ensure_navigation_state(env)
+    robot = env.scene["robot"]
+    finished = env._next_target_idx >= len(env.cfg.path_points)
+    planar_speed = torch.linalg.vector_norm(robot.data.root_lin_vel_w[:, :2], dim=-1)
+    tilt = torch.linalg.vector_norm(robot.data.projected_gravity_b[:, :2], dim=-1)
+    stable = (planar_speed < speed_threshold) & (tilt < tilt_threshold)
+    return (finished & stable).float()
 
 
 def reached_checkpoint(env, threshold: float = 1.0) -> torch.Tensor:

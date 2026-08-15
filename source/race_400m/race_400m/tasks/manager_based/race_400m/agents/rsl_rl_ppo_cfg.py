@@ -55,3 +55,10 @@ class LegOnlyHighCadencePPORunnerCfg(LegOnlyPPORunnerCfg):
     """Same policy interface; the completed leg-only checkpoint can resume."""
 
     experiment_name = "g1_track_400m"
+
+
+@configclass
+class LegOnlyStartStopPPORunnerCfg(LegOnlyHighCadencePPORunnerCfg):
+    """New 83-observation policy for phase-aware start and stop control."""
+
+    experiment_name = "g1_track_400m_start_stop"
