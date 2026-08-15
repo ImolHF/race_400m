@@ -331,3 +331,31 @@ Comparison priority: completion rate > fall rate > finish time > lateral speed
 
 These runs measure repeatability and base stability only; they are **not** a
 sim2real safety certificate.
+
+### Two-GPU evaluation of the selected models
+
+The launcher below starts two independent headless evaluation processes: GPU 0
+for `leg_only_high_cadence_model.pt`, GPU 1 for `locked_elbow_arm_model.pt`.
+It is intentionally not a distributed PPO job, so do not add `torchrun` or
+`--distributed`.
+
+```bash
+chmod +x scripts/rsl_rl/evaluate_selected_models_two_gpu.sh
+scripts/rsl_rl/evaluate_selected_models_two_gpu.sh \
+  /absolute/path/leg_only_high_cadence_model.pt \
+  /absolute/path/locked_elbow_arm_model.pt
+```
+
+It evaluates 100 episodes with 64 parallel environments on each GPU by
+default. To override those values and choose an output directory:
+
+```bash
+NUM_EPISODES=200 NUM_ENVS=256 \
+scripts/rsl_rl/evaluate_selected_models_two_gpu.sh \
+  /absolute/path/leg_only_high_cadence_model.pt \
+  /absolute/path/locked_elbow_arm_model.pt \
+  outputs/eval/selected_models
+```
+
+Each model gets its own report and console log below the specified directory;
+run `compare_summaries.py` on the two `summary.json` files afterward.
