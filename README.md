@@ -142,6 +142,28 @@ For a clean comparison, keep the old checkpoint untouched and use a new
 continue to 1500; if completion falls, stop and compare against the unchanged
 baseline rather than continuing the degraded model.
 
+## Faster leg-only gait: high-cadence fine-tuning
+
+`Template-Race-400m-LegOnly-HighCadence` keeps the same **12-action / 82-observation**
+policy interface as the completed leg-only model, so resume the best completion
+checkpoint rather than starting over. It raises cadence moderately from a
+0.55 s to a 0.48 s gait period, rewards forward track speed more strongly, and
+uses a shorter 0.16 s swing-time limit with 5.5 cm swing clearance. It does
+not increase stride reach, so the intended speed gain is from quicker leg
+cycling rather than hopping or exaggerated rear kick.
+
+```bash
+torchrun --standalone --nproc_per_node=2 scripts/rsl_rl/train.py \
+  --task Template-Race-400m-LegOnly-HighCadence --headless --distributed \
+  --num_envs 4096 --max_iterations 1000 --run_name leg_only_high_cadence \
+  --resume --load_run 'YOUR_COMPLETED_LEG_ONLY_RUN' \
+  --checkpoint 'model_.*.pt'
+```
+
+First inspect the checkpoint at 300 iterations. Continue only if completion
+does not fall and the average track-forward speed increases; otherwise keep
+the original completion model as the deployment baseline.
+
 ## Recommended: gait-quality fine-tuning
 
 If you already have a 12-action checkpoint that completes the lap, fine-tune

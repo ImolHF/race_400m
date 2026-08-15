@@ -369,6 +369,73 @@ class LegOnlyRewardsCfg(RewardsCfg):
 
 
 @configclass
+class LegOnlyHighCadenceRewardsCfg(LegOnlyRewardsCfg):
+    """A conservative speed fine-tuning profile for a completed leg-only gait."""
+
+    # 0.48 s is a 15% cadence increase from the proven 0.55 s baseline.
+    # A longer stance fraction keeps the commanded airborne phase (0.168 s)
+    # compatible with the short-flight objective below instead of creating a
+    # hopping policy.
+    alternating_gait = RewTerm(
+        func=_alternating_foot_gait,
+        weight=0.25,
+        params={
+            "period": 0.48,
+            "offset": (0.0, 0.5),
+            "threshold": 0.65,
+            "sensor_cfg": SceneEntityCfg(
+                "contact_forces", body_names=["left_ankle_roll_link", "right_ankle_roll_link"]
+            ),
+        },
+    )
+    # Allow faster leg reversals without removing smoothness regularization.
+    action_rate = RewTerm(func=isaac_mdp.action_rate_l2, weight=-0.007)
+    forward_course_speed = RewTerm(func=_forward_course_speed, weight=1.80)
+    swing_forward = RewTerm(
+        func=_swing_foot_forward,
+        weight=0.16,
+        params={
+            "sensor_cfg": SceneEntityCfg(
+                "contact_forces", body_names=["left_ankle_roll_link", "right_ankle_roll_link"]
+            ),
+            "asset_cfg": SceneEntityCfg("robot", body_names=["left_ankle_roll_link", "right_ankle_roll_link"]),
+        },
+    )
+    excess_swing_time = RewTerm(
+        func=_excess_swing_time_penalty,
+        weight=-1.0,
+        params={
+            "max_air_time": 0.16,
+            "sensor_cfg": SceneEntityCfg(
+                "contact_forces", body_names=["left_ankle_roll_link", "right_ankle_roll_link"]
+            ),
+        },
+    )
+    swing_clearance = RewTerm(
+        func=_swing_foot_clearance,
+        weight=0.08,
+        params={
+            "target_height": 0.055,
+            "sensor_cfg": SceneEntityCfg(
+                "contact_forces", body_names=["left_ankle_roll_link", "right_ankle_roll_link"]
+            ),
+            "asset_cfg": SceneEntityCfg("robot", body_names=["left_ankle_roll_link", "right_ankle_roll_link"]),
+        },
+    )
+    rear_swing_foot = RewTerm(
+        func=_rear_swing_foot_penalty,
+        weight=-5.0,
+        params={
+            "max_rearward": 0.14,
+            "sensor_cfg": SceneEntityCfg(
+                "contact_forces", body_names=["left_ankle_roll_link", "right_ankle_roll_link"]
+            ),
+            "asset_cfg": SceneEntityCfg("robot", body_names=["left_ankle_roll_link", "right_ankle_roll_link"]),
+        },
+    )
+
+
+@configclass
 class EventsCfg:
     """Keep physical and navigation state synchronized on every reset."""
 
@@ -432,3 +499,10 @@ class LegOnlyRaceEnvCfg(RaceEnvCfg):
 
     actions: LegOnlyActionsCfg = LegOnlyActionsCfg()
     rewards: LegOnlyRewardsCfg = LegOnlyRewardsCfg()
+
+
+@configclass
+class LegOnlyHighCadenceRaceEnvCfg(LegOnlyRaceEnvCfg):
+    """12-action speed fine-tuning task compatible with leg-only checkpoints."""
+
+    rewards: LegOnlyHighCadenceRewardsCfg = LegOnlyHighCadenceRewardsCfg()
