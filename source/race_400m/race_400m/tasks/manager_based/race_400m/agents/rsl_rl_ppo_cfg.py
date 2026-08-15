@@ -66,12 +66,12 @@ class LegOnlyStartStopPPORunnerCfg(LegOnlyHighCadencePPORunnerCfg):
 
 @configclass
 class LockedElbowStartStopPPORunnerCfg(PPORunnerCfg):
-    """Six-GPU friendly PPO configuration for the 14-action, 85-observation task."""
+    """Eight-GPU PPO configuration for the 14-action, 85-observation task."""
 
-    # 6 * 4096 * 16 = 393,216 transitions per update. Keeping 24 rollout
-    # steps would create 589,824 transitions/update and increases PPO and
-    # distributed synchronization time without improving simulator occupancy.
-    num_steps_per_env = 16
+    # 8 * 4096 * 12 = 393,216 transitions per update, identical to the former
+    # six-GPU (6 * 4096 * 16) batch. This preserves PPO update scale while
+    # reducing per-rank rollout work instead of making each update 33% larger.
+    num_steps_per_env = 12
     max_iterations = 10000
     save_interval = 50
     experiment_name = "g1_track_400m_locked_elbow_start_stop"
