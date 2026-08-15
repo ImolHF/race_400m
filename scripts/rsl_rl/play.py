@@ -62,6 +62,7 @@ import time
 import torch
 
 import isaaclab.sim as sim_utils
+import omni.ui as ui
 from rsl_rl.runners import OnPolicyRunner
 
 from isaaclab.envs import (
@@ -145,6 +146,19 @@ def _update_active_track_marker(active_marker: VisualizationMarkers, track_posit
     return target_index
 
 
+def _create_race_monitor() -> dict[str, ui.Label]:
+    """Create a small in-app panel for the evaluation's simulation metrics."""
+    window = ui.Window("Race Monitor", width=330, height=140)
+    with window.frame:
+        with ui.VStack(spacing=6):
+            ui.Label("400 m waypoint evaluation", style={"font_size": 18})
+            sim_time = ui.Label("Sim time: 0.00 s", style={"font_size": 16})
+            waypoint = ui.Label("Target: 1 / 201", style={"font_size": 16})
+            speed = ui.Label("Planar speed: 0.00 m/s", style={"font_size": 16})
+    # Keep the window reference with its labels so Python does not dispose it.
+    return {"window": window, "sim_time": sim_time, "waypoint": waypoint, "speed": speed}
+
+
 @hydra_task_config(args_cli.task, "rsl_rl_cfg_entry_point")
 def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agent_cfg: RslRlOnPolicyRunnerCfg):
     """Play with RSL-RL agent."""
@@ -183,6 +197,9 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     if args_cli.track_markers:
         static_track_markers, active_track_marker, track_positions = _create_track_markers(env)
         print("[INFO] Track markers: blue=checkpoint, green=start, red=finish, yellow=active target.")
+        race_monitor = _create_race_monitor()
+    else:
+        race_monitor = None
 
     # convert to single-agent instance if required by the RL algorithm
     if isinstance(env.unwrapped, DirectMARLEnv):
@@ -255,6 +272,10 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
                     f"target={target_index + 1:3d}/{len(track_positions)}  "
                     f"planar_speed={planar_speed:4.2f} m/s"
                 )
+                if race_monitor is not None:
+                    race_monitor["sim_time"].text = f"Sim time: {episode_sim_time:.2f} s"
+                    race_monitor["waypoint"].text = f"Target: {target_index + 1} / {len(track_positions)}"
+                    race_monitor["speed"].text = f"Planar speed: {planar_speed:.2f} m/s"
         if bool(dones[0].item()):
             print(f"[RACE] episode reset after {episode_sim_time:.2f}s of simulation time.")
             episode_sim_time = 0.0
