@@ -135,8 +135,11 @@ G1_CONFIG = ArticulationCfg(
             joint_names_expr=["left_elbow_joint"],
             effort_limit_sim=50.0,
             velocity_limit_sim=50.0,
-            stiffness=220.0,
-            damping=20.0,
+            # Passive elbow lock at the configured +0.95 rad bend.  It is
+            # deliberately stiffer than the swinging shoulder actuator so
+            # contact disturbances cannot straighten the arm during running.
+            stiffness=320.0,
+            damping=32.0,
         ),
         "left_arm_posture": ImplicitActuatorCfg(
             joint_names_expr=["left_shoulder_roll_joint", "left_shoulder_yaw_joint", "left_wrist.*"],
@@ -156,8 +159,8 @@ G1_CONFIG = ArticulationCfg(
             joint_names_expr=["right_elbow_joint"],
             effort_limit_sim=50.0,
             velocity_limit_sim=50.0,
-            stiffness=220.0,
-            damping=20.0,
+            stiffness=320.0,
+            damping=32.0,
         ),
         "right_arm_posture": ImplicitActuatorCfg(
             joint_names_expr=["right_shoulder_roll_joint", "right_shoulder_yaw_joint", "right_wrist.*"],

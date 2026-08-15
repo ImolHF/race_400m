@@ -67,19 +67,19 @@ class ObservationsCfg:
 
 @configclass
 class ActionsCfg:
-    """Leg actions plus sagittal-plane arm swing with fixed 54-degree elbows."""
+    """Leg actions plus sagittal-plane shoulder swing with locked elbows."""
 
     joint_pos = JointPositionActionCfg(
         asset_name="robot",
-        joint_names=[".*_hip_.*", ".*_knee_joint", ".*_ankle_.*", ".*_shoulder_pitch_joint", ".*_elbow_joint"],
+        # The only arm DoFs exposed to PPO are left/right shoulder pitch.
+        # Elbows, shoulder roll, shoulder yaw, and wrists keep their default
+        # position targets through their dedicated PD actuators.
+        joint_names=[".*_hip_.*", ".*_knee_joint", ".*_ankle_.*", ".*_shoulder_pitch_joint"],
         scale={
             ".*_hip_.*": 0.25,
             ".*_knee_joint": 0.25,
             ".*_ankle_.*": 0.20,
             ".*_shoulder_pitch_joint": 0.18,
-            # Retain the elbow target at its configured default (+0.95 rad)
-            # while preventing policy actions from changing it.
-            ".*_elbow_joint": 0.0,
         },
         use_default_offset=True,
     )

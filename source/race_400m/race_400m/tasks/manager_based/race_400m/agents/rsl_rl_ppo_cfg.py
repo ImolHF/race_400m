@@ -13,8 +13,8 @@ class PPORunnerCfg(RslRlOnPolicyRunnerCfg):
     # With two GPUs and 4,096 environments per GPU, one PPO rollout contains
     # 196,608 transitions (2 * 4,096 * 24).
     num_steps_per_env = 24
-    # This experiment intentionally starts from scratch: the action space,
-    # cadence target, and leg PD dynamics changed together.
+    # This experiment intentionally starts from scratch: it uses 12 leg
+    # actions plus two shoulder-pitch actions, not the old 16-action policy.
     max_iterations = 8000
     save_interval = 50
     experiment_name = "g1_track_400m"

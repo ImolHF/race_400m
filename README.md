@@ -93,21 +93,29 @@ soft-limit cost, and a non-foot (hip/knee) contact penalty. These complement
 the existing G1 hip-neutral, contact-phase, swing-clearance, foot-slide,
 joint-acceleration, and torque terms rather than duplicating them.
 
-## Arm-swing posture fine-tuning
+## Locked-elbow shoulder-swing training
 
-The current 16-action task keeps both elbows at a fixed, moderate `+0.95 rad`
-(about 54 degrees) and controls only shoulder pitch for arm swing. The arm
+The default `Template-Race-400m` task has **14 actions**: 12 leg joints plus
+left/right shoulder pitch. Both elbows are held at a fixed, moderate `+0.95 rad`
+(about 54 degrees) using dedicated high-stiffness, high-damping PD actuators;
+shoulder roll/yaw and the wrists are also held at their default posture. The arm
 reward is contact-synchronized: when one foot swings, the opposite elbow is
 rewarded for forward motion and the same-side elbow for backward motion. It
 uses elbow-link velocity in the pelvis yaw frame, so it does not rely on an
 assumed shoulder-joint sign. A small shoulder-pitch deviation cost prevents
 flailing.
 
-For a checkpoint such as `arm_swing_posture_model.pt`, resume only if its
-policy has the current 16-action / 86-observation structure. This update keeps
-that structure unchanged. It also adds a rear-swing-foot penalty, which limits
-an airborne ankle to 0.16 m behind the pelvis and reduces exaggerated heel
-kick without suppressing normal forward swing.
+This task must train **from scratch**: the previous arm-swing checkpoint has
+16 actions / 86 observations, while this task has 14 actions / 84 observations.
+It also includes a rear-swing-foot penalty, which limits an airborne ankle to
+0.16 m behind the pelvis and reduces exaggerated heel kick without suppressing
+normal forward swing.
+
+```bash
+torchrun --standalone --nproc_per_node=2 scripts/rsl_rl/train.py \
+  --task Template-Race-400m --headless --distributed \
+  --num_envs 4096 --max_iterations 8000 --run_name locked_elbow_arm_from_scratch
+```
 
 ## Recommended recovery path: leg-only race task
 
@@ -136,8 +144,9 @@ baseline rather than continuing the degraded model.
 
 ## Recommended: gait-quality fine-tuning
 
-If you already have a checkpoint that completes the lap, fine-tune it instead
-of training from scratch. The current task adds official-G1-style gait shaping:
+If you already have a 12-action checkpoint that completes the lap, fine-tune
+the `Template-Race-400m-LegOnly` task instead of training from scratch. This
+task adds official-G1-style gait shaping:
 hip yaw/roll deviation, joint acceleration/torque penalties, biped air-time,
 and foot-slide penalties. It also adapts the phase-based alternating-contact
 and swing-foot-clearance terms used by Unitree RL Lab and Unitree RL Mjlab,
@@ -155,7 +164,7 @@ Assuming the best run is named
 
 ```bash
 torchrun --standalone --nproc_per_node=2 scripts/rsl_rl/train.py \
-  --task Template-Race-400m --headless --distributed \
+  --task Template-Race-400m-LegOnly --headless --distributed \
   --num_envs 4096 --max_iterations 1500 --run_name gait_finetune \
   --resume --load_run '2026-08-14_12-00-00_race_baseline' \
   --checkpoint 'model_.*.pt'
