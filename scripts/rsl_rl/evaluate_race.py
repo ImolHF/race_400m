@@ -41,6 +41,12 @@ parser.add_argument(
     default="nominal",
     help="Evaluation-only physics/reset perturbation suite. Does not change the checkpoint or training config.",
 )
+parser.add_argument(
+    "--reality_gap_suite",
+    choices=("nominal", "moderate", "strong"),
+    default="nominal",
+    help="Inference-side action delay, state noise, and odometry-drift suite for real-robot relevance.",
+)
 cli_args.add_rsl_rl_args(parser)
 AppLauncher.add_app_launcher_args(parser)
 args_cli, hydra_args = parser.parse_known_args()
@@ -162,6 +168,112 @@ def _configure_robustness_suite(env_cfg, suite: str) -> dict[str, object]:
     }
 
 
+def _reality_gap_config(suite: str) -> dict[str, float | int | str]:
+    """Return inference-side perturbations without changing simulator physics."""
+    if suite == "nominal":
+        return {"name": "nominal", "description": "Unmodified policy observation and action timing."}
+    if suite == "moderate":
+        return {
+            "name": "moderate",
+            "action_delay_steps": 1,
+            "joint_pos_noise_rad": 0.003,
+            "joint_vel_noise_radps": 0.04,
+            "base_velocity_noise_mps": 0.03,
+            "base_angular_velocity_noise_radps": 0.03,
+            "gravity_noise": 0.01,
+            "waypoint_noise_m": 0.03,
+            "odometry_scale_error": 0.01,
+            "odometry_yaw_bias_deg": 1.5,
+        }
+    return {
+        "name": "strong",
+        "action_delay_steps": 2,
+        "joint_pos_noise_rad": 0.008,
+        "joint_vel_noise_radps": 0.10,
+        "base_velocity_noise_mps": 0.08,
+        "base_angular_velocity_noise_radps": 0.08,
+        "gravity_noise": 0.025,
+        "waypoint_noise_m": 0.08,
+        "odometry_scale_error": 0.03,
+        "odometry_yaw_bias_deg": 4.0,
+    }
+
+
+def _sample_odometry_parameters(config: dict[str, float | int | str], count: int, device: torch.device):
+    """Sample persistent per-episode odometry scale and heading bias."""
+    scale_limit = float(config.get("odometry_scale_error", 0.0))
+    yaw_limit = float(config.get("odometry_yaw_bias_deg", 0.0)) * torch.pi / 180.0
+    scale = torch.empty(count, device=device).uniform_(-scale_limit, scale_limit)
+    yaw = torch.empty(count, device=device).uniform_(-yaw_limit, yaw_limit)
+    return scale, yaw
+
+
+def _apply_reality_gap(
+    observation: torch.Tensor,
+    joint_dim: int,
+    action_dim: int,
+    yaw_quaternion: torch.Tensor,
+    odometry_error_w: torch.Tensor,
+    odometry_yaw_bias: torch.Tensor,
+    config: dict[str, float | int | str],
+) -> torch.Tensor:
+    """Corrupt only the policy input, preserving the true simulator state for metrics.
+
+    The observation layout is the task's documented concatenation: joint
+    position, joint velocity, base linear/angular velocity, projected gravity,
+    previous action, target direction, target distance, and optional phase
+    speed. Target corruption models state-estimation error in the 200-point
+    navigation interface rather than changing the waypoint reward itself.
+    """
+    if config["name"] == "nominal":
+        return observation
+
+    result = observation.clone()
+    joint_pos_end = joint_dim
+    joint_vel_end = joint_pos_end + joint_dim
+    base_lin_end = joint_vel_end + 3
+    base_ang_end = base_lin_end + 3
+    gravity_end = base_ang_end + 3
+    target_direction_start = gravity_end + action_dim
+    target_distance_index = target_direction_start + 2
+    if target_distance_index >= result.shape[1]:
+        raise RuntimeError("Unexpected policy observation layout; cannot apply reality-gap suite safely.")
+
+    result[:, :joint_pos_end] += torch.randn_like(result[:, :joint_pos_end]) * float(config["joint_pos_noise_rad"])
+    result[:, joint_pos_end:joint_vel_end] += (
+        torch.randn_like(result[:, joint_pos_end:joint_vel_end]) * float(config["joint_vel_noise_radps"])
+    )
+    result[:, joint_vel_end:base_lin_end] += (
+        torch.randn_like(result[:, joint_vel_end:base_lin_end]) * float(config["base_velocity_noise_mps"])
+    )
+    result[:, base_lin_end:base_ang_end] += (
+        torch.randn_like(result[:, base_lin_end:base_ang_end]) * float(config["base_angular_velocity_noise_radps"])
+    )
+    gravity = result[:, base_ang_end:gravity_end]
+    gravity += torch.randn_like(gravity) * float(config["gravity_noise"])
+    result[:, base_ang_end:gravity_end] = gravity / torch.linalg.vector_norm(gravity, dim=-1, keepdim=True).clamp_min(1.0e-6)
+
+    # A wheel/leg odometry scale error accumulates along the true travelled
+    # path. Convert that world-frame position error into the policy's yaw frame
+    # before perturbing its scaled relative waypoint vector.
+    odometry_error_b = quat_apply_inverse(yaw_quaternion, odometry_error_w)
+    direction = result[:, target_direction_start:target_distance_index]
+    true_direction = direction / torch.linalg.vector_norm(direction, dim=-1, keepdim=True).clamp_min(1.0e-6)
+    direction -= odometry_error_b[:, :2] * 0.25
+    yaw = odometry_yaw_bias
+    direction_x = torch.cos(yaw) * direction[:, 0] - torch.sin(yaw) * direction[:, 1]
+    direction_y = torch.sin(yaw) * direction[:, 0] + torch.cos(yaw) * direction[:, 1]
+    result[:, target_direction_start:target_distance_index] = torch.stack((direction_x, direction_y), dim=-1)
+    distance_error = torch.sum(odometry_error_b[:, :2] * true_direction, dim=-1)
+    result[:, target_distance_index] = torch.clamp(
+        result[:, target_distance_index]
+        - 0.1 * distance_error
+        + torch.randn_like(distance_error) * (0.1 * float(config["waypoint_noise_m"])),
+        min=0.0,
+    )
+    return result
+
+
 @hydra_task_config(args_cli.task, "rsl_rl_cfg_entry_point")
 def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlOnPolicyRunnerCfg):
     """Run the evaluation rollout."""
@@ -173,6 +285,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlOnPolic
         agent_cfg.seed = args_cli.seed
     env_cfg.sim.device = args_cli.device if args_cli.device is not None else env_cfg.sim.device
     suite_config = _configure_robustness_suite(env_cfg, args_cli.robustness_suite)
+    reality_gap_config = _reality_gap_config(args_cli.reality_gap_suite)
 
     # checkpoint must be an absolute, existing path
     checkpoint = os.path.abspath(args_cli.checkpoint)
@@ -201,6 +314,8 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlOnPolic
     num_envs = unwrapped.num_envs
     dt = unwrapped.step_dt
     device = unwrapped.device
+    joint_dim = robot.num_joints
+    torch.manual_seed((args_cli.seed if args_cli.seed is not None else (agent_cfg.seed or 0)) + 12345)
 
     # --- running per-environment accumulators -----------------------------
     def _zeros(*shape):
@@ -233,12 +348,18 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlOnPolic
     # --- bookkeeping -------------------------------------------------------
     episodes = []
     prev_action = torch.zeros((num_envs, unwrapped.action_space.shape[-1]), device=device)
+    action_delay_steps = int(reality_gap_config.get("action_delay_steps", 0))
+    action_fifo = torch.zeros((action_delay_steps + 1, num_envs, prev_action.shape[1]), device=device)
+    odometry_error_w = torch.zeros((num_envs, 3), device=device)
+    odometry_scale_error, odometry_yaw_bias = _sample_odometry_parameters(reality_gap_config, num_envs, device)
 
     obs, _ = env.get_observations()
     obs_dim = obs.shape[-1]
     act_dim = unwrapped.action_space.shape[-1]
     print(
-        f"[INFO] Starting {args_cli.robustness_suite} evaluation: obs_dim={obs_dim}, act_dim={act_dim}", flush=True
+        f"[INFO] Starting physics={args_cli.robustness_suite}, reality_gap={args_cli.reality_gap_suite} "
+        f"evaluation: obs_dim={obs_dim}, act_dim={act_dim}",
+        flush=True,
     )
 
     step_total = 0
@@ -271,8 +392,14 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlOnPolic
         heading_cos = (forward_w[:, :2] * tangent).sum(dim=-1).clamp(-1.0, 1.0)
         heading_err = torch.acos(heading_cos)
 
+        policy_observation = _apply_reality_gap(
+            obs, joint_dim, act_dim, yaw, odometry_error_w, odometry_yaw_bias, reality_gap_config
+        )
         with torch.inference_mode():
-            actions = policy(obs)
+            proposed_actions = policy(policy_observation)
+        action_fifo = torch.roll(action_fifo, shifts=-1, dims=0)
+        action_fifo[-1] = proposed_actions
+        actions = action_fifo[0]
 
         jv = torch.norm(joint_vel, dim=-1)
         act_rate = torch.norm(actions - prev_action, dim=-1)
@@ -325,6 +452,10 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlOnPolic
         crossed_events += crossed.long()
         slide_events += sliding.long()
         undesired_events += undesired.long()
+
+        # Accumulate a persistent path-length-proportional odometry error
+        # before env.step() can reset a terminated instance.
+        odometry_error_w[:, :2] += root_lin_vel[:, :2] * odometry_scale_error.unsqueeze(-1) * dt
 
         with torch.inference_mode():
             obs, rew, dones, extras = env.step(actions)
@@ -396,18 +527,25 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlOnPolic
 
         prev_action = actions.clone()
         prev_action[dones_b] = 0.0
+        if dones_b.any():
+            action_fifo[:, dones_b] = 0.0
+            odometry_error_w[dones_b] = 0.0
+            reset_count = int(torch.count_nonzero(dones_b).item())
+            reset_scale, reset_yaw = _sample_odometry_parameters(reality_gap_config, reset_count, device)
+            odometry_scale_error[dones_b] = reset_scale
+            odometry_yaw_bias[dones_b] = reset_yaw
 
     env.close()
 
     # --- write outputs ----------------------------------------------------
     os.makedirs(args_cli.output_dir, exist_ok=True)
-    _write_outputs(args_cli, checkpoint, episodes, num_points, obs_dim, act_dim, suite_config)
+    _write_outputs(args_cli, checkpoint, episodes, num_points, obs_dim, act_dim, suite_config, reality_gap_config)
 
     # close sim app
     simulation_app.close()
 
 
-def _write_outputs(args_cli, checkpoint, episodes, num_points, obs_dim, act_dim, suite_config):
+def _write_outputs(args_cli, checkpoint, episodes, num_points, obs_dim, act_dim, suite_config, reality_gap_config):
     """Write episodes.csv, summary.json and report.md."""
     import statistics
     import subprocess
@@ -449,6 +587,8 @@ def _write_outputs(args_cli, checkpoint, episodes, num_points, obs_dim, act_dim,
         "seed": args_cli.seed,
         "robustness_suite": args_cli.robustness_suite,
         "robustness_config": suite_config,
+        "reality_gap_suite": args_cli.reality_gap_suite,
+        "reality_gap_config": reality_gap_config,
         "num_envs": args_cli.num_envs,
         "num_episodes": num_episodes,
         "num_path_points": num_points,

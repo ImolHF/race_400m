@@ -15,6 +15,7 @@ episodes=${NUM_EPISODES:-100}
 envs=${NUM_ENVS:-64}
 seed=${SEED:-42}
 suite=${ROBUSTNESS_SUITE:-nominal}
+reality_gap_suite=${REALITY_GAP_SUITE:-nominal}
 leg_gpu=${EVAL_GPU_LEG:-0}
 arm_gpu=${EVAL_GPU_ARM:-1}
 
@@ -26,6 +27,7 @@ CUDA_VISIBLE_DEVICES="$leg_gpu" python scripts/rsl_rl/evaluate_race.py \
   --task Template-Race-400m-LegOnly-HighCadence --headless \
   --checkpoint "$leg_checkpoint" --num_episodes "$episodes" --num_envs "$envs" --seed "$seed" \
   --robustness_suite "$suite" \
+  --reality_gap_suite "$reality_gap_suite" \
   --output_dir "$output_root/leg_only_high_cadence" \
   > "$output_root/leg_only_high_cadence.console.log" 2>&1 &
 leg_pid=$!
@@ -34,6 +36,7 @@ CUDA_VISIBLE_DEVICES="$arm_gpu" python scripts/rsl_rl/evaluate_race.py \
   --task Template-Race-400m --headless \
   --checkpoint "$arm_checkpoint" --num_episodes "$episodes" --num_envs "$envs" --seed "$seed" \
   --robustness_suite "$suite" \
+  --reality_gap_suite "$reality_gap_suite" \
   --output_dir "$output_root/locked_elbow_arm" \
   > "$output_root/locked_elbow_arm.console.log" 2>&1 &
 arm_pid=$!

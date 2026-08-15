@@ -430,3 +430,29 @@ scripts/rsl_rl/evaluate_selected_models_two_gpu.sh \
 `strong` widens all of those ranges and should be treated as a stress test,
 not an estimate of expected real-world performance. Compare `completion_rate`,
 `fall_rate`, and `mean_max_progress_m` before comparing speed or gait style.
+
+### Deployment-gap robustness: delay, noise, and odometry drift
+
+Physics randomization alone is not sim2sim and does not test the largest
+remaining risk of this no-vision waypoint strategy: a real policy receives
+delayed, noisy state estimates rather than simulator ground truth. Add
+`REALITY_GAP_SUITE=moderate` or `strong` to inject, only into the policy input,
+action delay, joint/IMU noise, waypoint noise, persistent odometry scale error,
+and yaw bias. The simulator's true state remains unchanged for fair metrics.
+
+Run the locked-elbow model through the realistic combined test first:
+
+```bash
+CUDA_VISIBLE_DEVICES=6 python scripts/rsl_rl/evaluate_race.py \
+  --task Template-Race-400m --headless \
+  --checkpoint /absolute/path/locked_elbow_arm_model.pt \
+  --robustness_suite=strong --reality_gap_suite=moderate \
+  --num_envs 256 --num_episodes 256 --seed 42 \
+  --output_dir outputs/eval/locked_elbow_physics_strong_gap_moderate_seed42
+```
+
+Repeat with seeds `43` and `44`. Then use `--reality_gap_suite=strong` as a
+stress boundary. These are still Isaac Lab evaluations. Strict sim2sim comes
+next: run the same checkpoint through an independently implemented MuJoCo G1
+adapter with exactly the same observation order, action scaling, waypoint
+interface, and test cases.
