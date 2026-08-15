@@ -97,7 +97,9 @@ import race_400m.tasks  # noqa: F401
 torch.backends.cuda.matmul.allow_tf32 = True
 torch.backends.cudnn.allow_tf32 = True
 torch.backends.cudnn.deterministic = False
-torch.backends.cudnn.benchmark = False
+# Training uses fixed network tensor shapes. Let cuDNN retain its fastest
+# algorithm choice instead of reselecting it each iteration.
+torch.backends.cudnn.benchmark = True
 
 
 @hydra_task_config(args_cli.task, "rsl_rl_cfg_entry_point")

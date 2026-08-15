@@ -346,6 +346,45 @@ scripts/rsl_rl/evaluate_selected_models_two_gpu.sh \
   /absolute/path/locked_elbow_arm_model.pt
 ```
 
+## Locked-elbow start, run, and stop training (six GPUs)
+
+`Template-Race-400m-LockedElbow-StartStop` is a new policy, not a resume of
+the existing locked-elbow checkpoint. It retains the **14 actions** (12 legs
+plus two shoulder-pitch joints) and adds the phase-speed observation used to
+learn a smooth default-stand start, a 3.6 m/s cruise, finish-line crossing,
+three-second brake, and stable stand. Its interface is therefore **85
+observations / 14 actions** and it must start from scratch.
+
+For six 72-GB GPUs, use 4,096 environments per GPU. The task uses 16 rollout
+steps per environment, giving 393,216 transitions per PPO update across six
+processes; this avoids an excessively large synchronized batch while retaining
+high PhysX GPU occupancy.
+
+```bash
+export CUDA_VISIBLE_DEVICES=0,1,2,3,4,5
+export OMP_NUM_THREADS=1
+export MKL_NUM_THREADS=1
+export OPENBLAS_NUM_THREADS=1
+export PYTHONUNBUFFERED=1
+
+torchrun --standalone --nproc_per_node=6 scripts/rsl_rl/train.py \
+  --task Template-Race-400m-LockedElbow-StartStop --headless --distributed \
+  --num_envs 4096 --max_iterations 10000 \
+  --run_name locked_elbow_start_stop_6gpu
+```
+
+Run a short launch check before committing a long job:
+
+```bash
+CUDA_VISIBLE_DEVICES=0,1 torchrun --standalone --nproc_per_node=2 scripts/rsl_rl/train.py \
+  --task Template-Race-400m-LockedElbow-StartStop --headless --distributed \
+  --num_envs 256 --max_iterations 2 --run_name locked_elbow_start_stop_smoke
+```
+
+Do not load `locked_elbow_arm_model.pt` with this task: its 84-observation
+interface is intentionally incompatible. Keep it unchanged as the deployed
+main-model candidate while this new start/stop candidate trains.
+
 It evaluates 100 episodes with 64 parallel environments on each GPU by
 default. To override those values and choose an output directory:
 

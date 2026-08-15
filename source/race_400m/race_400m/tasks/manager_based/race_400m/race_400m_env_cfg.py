@@ -479,6 +479,91 @@ class LegOnlyStartStopRewardsCfg(LegOnlyHighCadenceRewardsCfg):
 
 
 @configclass
+class LockedElbowStartStopRewardsCfg(RewardsCfg):
+    """Phase-aware start/stop shaping while retaining locked-elbow arm gait rewards."""
+
+    # The normal raw-speed reward would encourage acceleration even after the
+    # finish line. Replace it with one command that is visible to the policy
+    # and ramps from standing, cruises, then decelerates only after crossing.
+    forward_course_speed = None
+    phase_speed_tracking = RewTerm(
+        func=_phase_speed_tracking,
+        weight=2.5,
+        params={"cruise_speed": 3.6, "start_points": 10, "stop_points": 0, "brake_time_s": 3.0, "std": 0.65},
+    )
+    finish_stability = RewTerm(
+        func=_finish_stability_reward,
+        weight=2.0,
+        params={"speed_threshold": 0.18, "tilt_threshold": 0.20},
+    )
+
+    # Keep the high-cadence leg shaping that worked with the race policy, but
+    # do not disable the arm swing, locked-elbow posture, or anti-flailing
+    # rewards inherited from RewardsCfg.
+    alternating_gait = RewTerm(
+        func=_alternating_foot_gait,
+        weight=0.25,
+        params={
+            "period": 0.48,
+            "offset": (0.0, 0.5),
+            "threshold": 0.65,
+            "sensor_cfg": SceneEntityCfg(
+                "contact_forces", body_names=["left_ankle_roll_link", "right_ankle_roll_link"]
+            ),
+        },
+    )
+    action_rate = RewTerm(func=isaac_mdp.action_rate_l2, weight=-0.007)
+    swing_forward = RewTerm(
+        func=_swing_foot_forward,
+        weight=0.16,
+        params={
+            "sensor_cfg": SceneEntityCfg(
+                "contact_forces", body_names=["left_ankle_roll_link", "right_ankle_roll_link"]
+            ),
+            "asset_cfg": SceneEntityCfg(
+                "robot", body_names=["left_ankle_roll_link", "right_ankle_roll_link"]
+            ),
+        },
+    )
+    excess_swing_time = RewTerm(
+        func=_excess_swing_time_penalty,
+        weight=-1.0,
+        params={
+            "max_air_time": 0.16,
+            "sensor_cfg": SceneEntityCfg(
+                "contact_forces", body_names=["left_ankle_roll_link", "right_ankle_roll_link"]
+            ),
+        },
+    )
+    swing_clearance = RewTerm(
+        func=_swing_foot_clearance,
+        weight=0.08,
+        params={
+            "target_height": 0.055,
+            "sensor_cfg": SceneEntityCfg(
+                "contact_forces", body_names=["left_ankle_roll_link", "right_ankle_roll_link"]
+            ),
+            "asset_cfg": SceneEntityCfg(
+                "robot", body_names=["left_ankle_roll_link", "right_ankle_roll_link"]
+            ),
+        },
+    )
+    rear_swing_foot = RewTerm(
+        func=_rear_swing_foot_penalty,
+        weight=-5.0,
+        params={
+            "max_rearward": 0.14,
+            "sensor_cfg": SceneEntityCfg(
+                "contact_forces", body_names=["left_ankle_roll_link", "right_ankle_roll_link"]
+            ),
+            "asset_cfg": SceneEntityCfg(
+                "robot", body_names=["left_ankle_roll_link", "right_ankle_roll_link"]
+            ),
+        },
+    )
+
+
+@configclass
 class EventsCfg:
     """Keep physical and navigation state synchronized on every reset."""
 
@@ -568,3 +653,22 @@ class LegOnlyStartStopRaceEnvCfg(LegOnlyHighCadenceRaceEnvCfg):
     observations: StartStopObservationsCfg = StartStopObservationsCfg()
     rewards: LegOnlyStartStopRewardsCfg = LegOnlyStartStopRewardsCfg()
     terminations: StartStopTerminationsCfg = StartStopTerminationsCfg()
+
+
+@configclass
+class LockedElbowStartStopRaceEnvCfg(RaceEnvCfg):
+    """14-action locked-elbow race policy with learned start and post-finish stop.
+
+    The policy has 85 observations: the normal 84 locked-elbow observations
+    plus the phase speed command. It must start from scratch because the
+    existing locked-elbow checkpoint has 84 observations.
+    """
+
+    observations: StartStopObservationsCfg = StartStopObservationsCfg()
+    actions: ActionsCfg = ActionsCfg()
+    rewards: LockedElbowStartStopRewardsCfg = LockedElbowStartStopRewardsCfg()
+    terminations: StartStopTerminationsCfg = StartStopTerminationsCfg()
+    # 400 m at the 3.6 m/s cruise target needs start-ramp margin, and stable
+    # post-finish braking needs another three seconds. 120 s made a correct
+    # finish look like a timeout before the learned stop could complete.
+    episode_length_s: float = 140.0
