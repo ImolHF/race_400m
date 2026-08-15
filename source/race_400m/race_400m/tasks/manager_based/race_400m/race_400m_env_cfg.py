@@ -36,7 +36,9 @@ from .mdp.rewards import (
     reached_checkpoint as _reached_checkpoint,
     reset_path_progress as _reset_path_progress,
     target_direction as _target_direction,
+    target_direction_after_finish_zero as _target_direction_after_finish_zero,
     target_distance as _target_distance,
+    target_distance_after_finish_zero as _target_distance_after_finish_zero,
     swing_foot_clearance as _swing_foot_clearance,
     swing_foot_forward as _swing_foot_forward,
     rear_swing_foot_penalty as _rear_swing_foot_penalty,
@@ -75,9 +77,11 @@ class StartStopObservationsCfg(ObservationsCfg):
 
     @configclass
     class PolicyCfg(ObservationsCfg.PolicyCfg):
+        target_direction = ObsTerm(func=_target_direction_after_finish_zero)
+        target_distance = ObsTerm(func=_target_distance_after_finish_zero)
         desired_course_speed = ObsTerm(
             func=_desired_course_speed,
-            params={"cruise_speed": 1.8, "start_points": 10, "stop_points": 12},
+            params={"cruise_speed": 1.8, "start_points": 10, "stop_points": 0, "brake_time_s": 3.0},
             scale=0.5,
         )
 
@@ -465,7 +469,7 @@ class LegOnlyStartStopRewardsCfg(LegOnlyHighCadenceRewardsCfg):
     phase_speed_tracking = RewTerm(
         func=_phase_speed_tracking,
         weight=2.5,
-        params={"cruise_speed": 1.8, "start_points": 10, "stop_points": 12, "std": 0.55},
+        params={"cruise_speed": 1.8, "start_points": 10, "stop_points": 0, "brake_time_s": 3.0, "std": 0.55},
     )
     finish_stability = RewTerm(
         func=_finish_stability_reward,

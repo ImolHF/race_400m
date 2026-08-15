@@ -16,6 +16,7 @@ def _ensure_navigation_state(env) -> None:
         env._next_target_idx = torch.zeros(env.num_envs, dtype=torch.long, device=env.device)
         env._previous_target_distance = torch.zeros(env.num_envs, dtype=torch.float32, device=env.device)
         env._finish_stable_time = torch.zeros(env.num_envs, dtype=torch.float32, device=env.device)
+        env._finish_step = torch.full((env.num_envs,), -1, dtype=torch.long, device=env.device)
 
 
 def reset_path_progress(env, env_ids: torch.Tensor | None) -> None:
@@ -27,6 +28,7 @@ def reset_path_progress(env, env_ids: torch.Tensor | None) -> None:
     # granting a checkpoint reward before the policy has taken an action.
     env._next_target_idx[env_ids] = 1
     env._finish_stable_time[env_ids] = 0.0
+    env._finish_step[env_ids] = -1
     robot = env.scene["robot"]
     position_local = robot.data.root_pos_w[env_ids, :2] - env.scene.env_origins[env_ids, :2]
     target = env._track_points[1]
@@ -61,31 +63,55 @@ def target_distance(env) -> torch.Tensor:
     return torch.linalg.vector_norm(displacement_xy, dim=-1, keepdim=True) * 0.1
 
 
+def target_direction_after_finish_zero(env) -> torch.Tensor:
+    """Use the normal target direction before the line and zero after it."""
+    direction = target_direction(env)
+    finished = env._next_target_idx >= len(env.cfg.path_points)
+    return torch.where(finished.unsqueeze(-1), torch.zeros_like(direction), direction)
+
+
+def target_distance_after_finish_zero(env) -> torch.Tensor:
+    """Avoid giving a stopped policy a target behind it after the finish line."""
+    distance = target_distance(env)
+    finished = env._next_target_idx >= len(env.cfg.path_points)
+    return torch.where(finished.unsqueeze(-1), torch.zeros_like(distance), distance)
+
+
 def desired_course_speed(
-    env, cruise_speed: float = 1.8, start_points: int = 10, stop_points: int = 12
+    env, cruise_speed: float = 1.8, start_points: int = 10, stop_points: int = 0, brake_time_s: float = 3.0
 ) -> torch.Tensor:
     """Return the phase-dependent forward-speed command for start and stop.
 
     The robot begins in its normal standing pose.  The command starts at a
-    small positive value, ramps over the first 20 m, stays at cruise speed,
-    and ramps down over the final 24 m.  Once the final waypoint is crossed,
-    the command is exactly zero so the same policy learns to stand still.
+    small positive value, ramps over the first 20 m, then stays at cruise
+    speed through the finish line.  After an exact finish-line crossing, it
+    decelerates along the exit direction for ``brake_time_s`` before standing.
     """
     _ensure_navigation_state(env)
     point_count = len(env.cfg.path_points)
     index = env._next_target_idx.to(dtype=torch.float32)
     start = 0.15 + 0.85 * ((index - 1.0) / float(start_points)).clamp(0.0, 1.0)
-    stop = ((float(point_count) - index) / float(stop_points)).clamp(0.0, 1.0)
-    command = cruise_speed * torch.minimum(start, stop)
-    command = torch.where(index >= point_count, torch.zeros_like(command), command)
+    command = cruise_speed * start
+    if stop_points > 0:
+        stop = ((float(point_count) - index) / float(stop_points)).clamp(0.0, 1.0)
+        command = cruise_speed * torch.minimum(start, stop)
+    finished = index >= point_count
+    elapsed = (env.episode_length_buf - env._finish_step.clamp_min(0)).to(torch.float32) * env.step_dt
+    post_finish_command = cruise_speed * (1.0 - elapsed / brake_time_s).clamp(0.0, 1.0)
+    command = torch.where(finished, post_finish_command, command)
     return command.unsqueeze(-1)
 
 
 def phase_speed_tracking(
-    env, cruise_speed: float = 1.8, start_points: int = 10, stop_points: int = 12, std: float = 0.55
+    env,
+    cruise_speed: float = 1.8,
+    start_points: int = 10,
+    stop_points: int = 0,
+    brake_time_s: float = 3.0,
+    std: float = 0.55,
 ) -> torch.Tensor:
     """Reward track-tangent speed tracking for smooth acceleration and braking."""
-    command = desired_course_speed(env, cruise_speed, start_points, stop_points).squeeze(-1)
+    command = desired_course_speed(env, cruise_speed, start_points, stop_points, brake_time_s).squeeze(-1)
     actual_speed = (env.scene["robot"].data.root_lin_vel_w[:, :2] * _course_tangent(env)).sum(dim=-1)
     return torch.exp(-torch.square(actual_speed - command) / (std * std))
 
@@ -117,8 +143,14 @@ def reached_checkpoint(env, threshold: float = 1.0) -> torch.Tensor:
     passed_distance = ((position_local - targets) * segment).sum(dim=-1) / segment_length
     lateral_error = torch.abs((position_local - targets)[:, 0] * segment[:, 1] - (position_local - targets)[:, 1] * segment[:, 0]) / segment_length
     passed = (passed_distance > 0.0) & (lateral_error < 1.25)
-    reached = active & ((distance < threshold) | passed)
+    # Intermediate targets can be captured inside a radius.  The final target
+    # must be physically crossed along its path tangent, so race time ends at
+    # the finish line rather than up to one metre before it.
+    final_target = env._next_target_idx == (len(env.cfg.path_points) - 1)
+    reached = active & (passed | ((distance < threshold) & ~final_target))
     env._next_target_idx = torch.where(reached, env._next_target_idx + 1, env._next_target_idx)
+    newly_finished = reached & (env._next_target_idx >= len(env.cfg.path_points))
+    env._finish_step = torch.where(newly_finished, env.episode_length_buf, env._finish_step)
 
     # A new target has a larger distance.  Reset its progress baseline so the
     # progress reward does not punish a successful checkpoint transition.
