@@ -359,3 +359,24 @@ scripts/rsl_rl/evaluate_selected_models_two_gpu.sh \
 
 Each model gets its own report and console log below the specified directory;
 run `compare_summaries.py` on the two `summary.json` files afterward.
+
+### Isaac Lab robustness suite
+
+Use the same two-GPU launcher with `ROBUSTNESS_SUITE=moderate` to compare the
+policies outside their nominal training conditions. This is evaluation-only:
+it does not train, fine-tune, or alter either checkpoint. Each parallel
+environment samples robot contact material, mass/inertia, center of mass, and
+PD gains at startup; every episode also samples a small initial position,
+orientation, and velocity error.
+
+```bash
+ROBUSTNESS_SUITE=moderate NUM_EPISODES=256 NUM_ENVS=128 \
+scripts/rsl_rl/evaluate_selected_models_two_gpu.sh \
+  /absolute/path/leg_only_high_cadence_model.pt \
+  /absolute/path/locked_elbow_arm_model.pt \
+  outputs/eval/moderate_robustness
+```
+
+`strong` widens all of those ranges and should be treated as a stress test,
+not an estimate of expected real-world performance. Compare `completion_rate`,
+`fall_rate`, and `mean_max_progress_m` before comparing speed or gait style.
