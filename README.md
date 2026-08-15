@@ -93,6 +93,22 @@ soft-limit cost, and a non-foot (hip/knee) contact penalty. These complement
 the existing G1 hip-neutral, contact-phase, swing-clearance, foot-slide,
 joint-acceleration, and torque terms rather than duplicating them.
 
+## Arm-swing posture fine-tuning
+
+The current 16-action task keeps both elbows at a fixed, moderate `+0.95 rad`
+(about 54 degrees) and controls only shoulder pitch for arm swing. The arm
+reward is contact-synchronized: when one foot swings, the opposite elbow is
+rewarded for forward motion and the same-side elbow for backward motion. It
+uses elbow-link velocity in the pelvis yaw frame, so it does not rely on an
+assumed shoulder-joint sign. A small shoulder-pitch deviation cost prevents
+flailing.
+
+For a checkpoint such as `arm_swing_posture_model.pt`, resume only if its
+policy has the current 16-action / 86-observation structure. This update keeps
+that structure unchanged. It also adds a rear-swing-foot penalty, which limits
+an airborne ankle to 0.16 m behind the pelvis and reduces exaggerated heel
+kick without suppressing normal forward swing.
+
 ## Recommended: gait-quality fine-tuning
 
 If you already have a checkpoint that completes the lap, fine-tune it instead

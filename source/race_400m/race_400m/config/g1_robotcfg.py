@@ -58,16 +58,17 @@ G1_CONFIG = ArticulationCfg(
             "left_shoulder_pitch_joint": 0.0,
             "left_shoulder_roll_joint": 0.0,
             "left_shoulder_yaw_joint": 0.0,
-            # Both elbows have a [-60, +120] degree range in this USD.  A
-            # positive 90-degree target is a valid compact running posture.
-            "left_elbow_joint": 1.57,
+            # Both elbows have a [-60, +120] degree range in this USD.  Start
+            # at +0.95 rad (about 54 degrees): compact enough to clear the
+            # torso and legs, but less rigid-looking than a 90-degree bend.
+            "left_elbow_joint": 0.95,
             "left_wrist_roll_joint": 0.0,
             "left_wrist_pitch_joint": 0.0,
             "left_wrist_yaw_joint": 0.0,
             "right_shoulder_pitch_joint": 0.0,
             "right_shoulder_roll_joint": 0.0,
             "right_shoulder_yaw_joint": 0.0,
-            "right_elbow_joint": 1.57,
+            "right_elbow_joint": 0.95,
             "right_wrist_roll_joint": 0.0,
             "right_wrist_pitch_joint": 0.0,
             "right_wrist_yaw_joint": 0.0,

@@ -23,9 +23,11 @@ from .mdp.rewards import (
     forward_course_speed as _forward_course_speed,
     forward_foot_landing as _forward_foot_landing,
     compact_stride_landing_penalty as _compact_stride_landing_penalty,
+    contact_synchronized_arm_swing as _contact_synchronized_arm_swing,
     contact_foot_velocity_penalty as _contact_foot_velocity_penalty,
     contact_foot_yaw_error as _contact_foot_yaw_error,
     excess_swing_time_penalty as _excess_swing_time_penalty,
+    arm_counter_swing_penalty as _arm_counter_swing_penalty,
     lateral_velocity_penalty as _lateral_velocity_penalty,
     progress_reward as _progress_reward,
     reached_checkpoint as _reached_checkpoint,
@@ -34,6 +36,7 @@ from .mdp.rewards import (
     target_distance as _target_distance,
     swing_foot_clearance as _swing_foot_clearance,
     swing_foot_forward as _swing_foot_forward,
+    rear_swing_foot_penalty as _rear_swing_foot_penalty,
 )
 from .mdp.terminations import is_completed as _is_completed
 from .mdp.terminations import robot_fallen as _robot_fallen
@@ -64,7 +67,7 @@ class ObservationsCfg:
 
 @configclass
 class ActionsCfg:
-    """Leg actions plus sagittal-plane arm swing with fixed 90-degree elbows."""
+    """Leg actions plus sagittal-plane arm swing with fixed 54-degree elbows."""
 
     joint_pos = JointPositionActionCfg(
         asset_name="robot",
@@ -73,8 +76,8 @@ class ActionsCfg:
             ".*_hip_.*": 0.25,
             ".*_knee_joint": 0.25,
             ".*_ankle_.*": 0.20,
-            ".*_shoulder_pitch_joint": 0.25,
-            # Retain the elbow target at its configured default (+1.57 rad)
+            ".*_shoulder_pitch_joint": 0.18,
+            # Retain the elbow target at its configured default (+0.95 rad)
             # while preventing policy actions from changing it.
             ".*_elbow_joint": 0.0,
         },
@@ -160,6 +163,11 @@ class RewardsCfg:
             )
         },
     )
+    shoulder_pitch_deviation = RewTerm(
+        func=isaac_mdp.joint_deviation_l1,
+        weight=-0.04,
+        params={"asset_cfg": SceneEntityCfg("robot", joint_names=".*_shoulder_pitch_joint")},
+    )
     # Unitree RL Gym's contact_no_vel: a loaded foot should not translate or
     # bounce.  This reduces stance-leg wobble without prescribing a stride.
     contact_no_vel = RewTerm(
@@ -242,7 +250,7 @@ class RewardsCfg:
     # grounded feet, avoiding a two-foot hopping solution.
     swing_forward = RewTerm(
         func=_swing_foot_forward,
-        weight=0.20,
+        weight=0.12,
         params={
             "sensor_cfg": SceneEntityCfg(
                 "contact_forces", body_names=["left_ankle_roll_link", "right_ankle_roll_link"]
@@ -283,6 +291,38 @@ class RewardsCfg:
                 "contact_forces", body_names=["left_ankle_roll_link", "right_ankle_roll_link"]
             ),
             "asset_cfg": SceneEntityCfg("robot", body_names=["left_ankle_roll_link", "right_ankle_roll_link"]),
+        },
+    )
+    rear_swing_foot = RewTerm(
+        func=_rear_swing_foot_penalty,
+        weight=-4.0,
+        params={
+            "max_rearward": 0.16,
+            "sensor_cfg": SceneEntityCfg(
+                "contact_forces", body_names=["left_ankle_roll_link", "right_ankle_roll_link"]
+            ),
+            "asset_cfg": SceneEntityCfg("robot", body_names=["left_ankle_roll_link", "right_ankle_roll_link"]),
+        },
+    )
+    arm_swing = RewTerm(
+        func=_contact_synchronized_arm_swing,
+        weight=0.25,
+        params={
+            "max_speed": 0.8,
+            "sensor_cfg": SceneEntityCfg(
+                "contact_forces", body_names=["left_ankle_roll_link", "right_ankle_roll_link"]
+            ),
+            "asset_cfg": SceneEntityCfg("robot", body_names=["left_elbow_link", "right_elbow_link"]),
+        },
+    )
+    arm_counter_swing = RewTerm(
+        func=_arm_counter_swing_penalty,
+        weight=-0.08,
+        params={
+            "sensor_cfg": SceneEntityCfg(
+                "contact_forces", body_names=["left_ankle_roll_link", "right_ankle_roll_link"]
+            ),
+            "asset_cfg": SceneEntityCfg("robot", body_names=["left_elbow_link", "right_elbow_link"]),
         },
     )
 

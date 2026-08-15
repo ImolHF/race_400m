@@ -269,6 +269,67 @@ def compact_stride_landing_penalty(
     return torch.sum(torch.square(over_stride) * first_contact, dim=1) * moving
 
 
+def rear_swing_foot_penalty(
+    env, max_rearward: float, sensor_cfg: SceneEntityCfg, asset_cfg: SceneEntityCfg
+) -> torch.Tensor:
+    """Penalize an airborne ankle travelling excessively far behind the pelvis."""
+    contact_sensor: ContactSensor = env.scene.sensors[sensor_cfg.name]
+    robot = env.scene[asset_cfg.name]
+    in_air = contact_sensor.data.current_contact_time[:, sensor_cfg.body_ids] <= 0.0
+    offset_w = robot.data.body_pos_w[:, asset_cfg.body_ids] - robot.data.root_pos_w.unsqueeze(1)
+    yaw = yaw_quat(robot.data.root_quat_w)
+    offset_b = quat_apply_inverse(
+        yaw.unsqueeze(1).expand(-1, offset_w.shape[1], -1).reshape(-1, 4), offset_w.reshape(-1, 3)
+    ).reshape(env.num_envs, -1, 3)
+    rearward = (-max_rearward - offset_b[:, :, 0]).clamp_min(0.0)
+    moving = torch.linalg.vector_norm(robot.data.root_lin_vel_w[:, :2], dim=-1) > 0.1
+    return torch.sum(torch.square(rearward) * in_air, dim=1) * moving
+
+
+def contact_synchronized_arm_swing(
+    env, sensor_cfg: SceneEntityCfg, asset_cfg: SceneEntityCfg, max_speed: float
+) -> torch.Tensor:
+    """Reward human-like contralateral arm motion using measured link velocity.
+
+    When the left foot swings, the left elbow should move backward and the
+    right elbow forward; the opposite is true for right-foot swing.  Measuring
+    elbow-link velocity in the pelvis yaw frame avoids guessing the sign of
+    the shoulder-pitch joint axis in this USD.
+    """
+    contact_sensor: ContactSensor = env.scene.sensors[sensor_cfg.name]
+    robot = env.scene[asset_cfg.name]
+    in_contact = contact_sensor.data.current_contact_time[:, sensor_cfg.body_ids] > 0.0
+    left_swing = (~in_contact[:, 0]) & in_contact[:, 1]
+    right_swing = in_contact[:, 0] & (~in_contact[:, 1])
+    relative_velocity_w = robot.data.body_lin_vel_w[:, asset_cfg.body_ids] - robot.data.root_lin_vel_w.unsqueeze(1)
+    yaw = yaw_quat(robot.data.root_quat_w)
+    relative_velocity_b = quat_apply_inverse(
+        yaw.unsqueeze(1).expand(-1, relative_velocity_w.shape[1], -1).reshape(-1, 4),
+        relative_velocity_w.reshape(-1, 3),
+    ).reshape(env.num_envs, -1, 3)
+    left_arm_x = relative_velocity_b[:, 0, 0]
+    right_arm_x = relative_velocity_b[:, 1, 0]
+    left_phase_reward = ((-left_arm_x).clamp(0.0, max_speed) + right_arm_x.clamp(0.0, max_speed))
+    right_phase_reward = (left_arm_x.clamp(0.0, max_speed) + (-right_arm_x).clamp(0.0, max_speed))
+    moving = torch.linalg.vector_norm(robot.data.root_lin_vel_w[:, :2], dim=-1) > 0.1
+    return (left_phase_reward * left_swing + right_phase_reward * right_swing) * moving
+
+
+def arm_counter_swing_penalty(env, sensor_cfg: SceneEntityCfg, asset_cfg: SceneEntityCfg) -> torch.Tensor:
+    """Penalize elbows moving forward/backward together during single support."""
+    contact_sensor: ContactSensor = env.scene.sensors[sensor_cfg.name]
+    robot = env.scene[asset_cfg.name]
+    single_support = torch.sum(contact_sensor.data.current_contact_time[:, sensor_cfg.body_ids] > 0.0, dim=1) == 1
+    relative_velocity_w = robot.data.body_lin_vel_w[:, asset_cfg.body_ids] - robot.data.root_lin_vel_w.unsqueeze(1)
+    yaw = yaw_quat(robot.data.root_quat_w)
+    relative_velocity_b = quat_apply_inverse(
+        yaw.unsqueeze(1).expand(-1, relative_velocity_w.shape[1], -1).reshape(-1, 4),
+        relative_velocity_w.reshape(-1, 3),
+    ).reshape(env.num_envs, -1, 3)
+    moving = torch.linalg.vector_norm(robot.data.root_lin_vel_w[:, :2], dim=-1) > 0.1
+    return torch.square(relative_velocity_b[:, 0, 0] + relative_velocity_b[:, 1, 0]) * single_support * moving
+
+
 def contact_foot_velocity_penalty(env, sensor_cfg: SceneEntityCfg, asset_cfg: SceneEntityCfg) -> torch.Tensor:
     """RL Gym's ``contact_no_vel`` adapted to Isaac Lab contact sensors.
 
