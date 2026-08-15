@@ -205,6 +205,22 @@ Use TensorBoard:
 tensorboard --logdir logs/rsl_rl/g1_track_400m --bind_all
 ```
 
+## Visualize a checkpoint with the 200-point track
+
+For a single-environment evaluation, `--track-markers` draws the actual
+ordered track points without changing the training scene or physics:
+blue spheres are ordinary checkpoints, green is the start, red is the finish,
+and the moving yellow sphere is the target currently used by the reward.
+The terminal also prints simulation time, target index, and planar speed once
+per second of simulation time.
+
+```bash
+python scripts/rsl_rl/play.py \
+  --task Template-Race-400m-LegOnly-HighCadence \
+  --num_envs 1 --track-markers --real-time \
+  --checkpoint /absolute/path/to/model.pt
+```
+
 Key metrics:
 
 - `Episode_Reward/reached_checkpoint`: should remain strong; a collapse means

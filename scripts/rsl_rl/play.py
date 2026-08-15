@@ -31,6 +31,12 @@ parser.add_argument(
     help="Use the pre-trained checkpoint from Nucleus.",
 )
 parser.add_argument("--real-time", action="store_true", default=False, help="Run in real-time, if possible.")
+parser.add_argument(
+    "--track-markers",
+    action="store_true",
+    default=False,
+    help="Show 400 m path points and the active target in a single-environment viewport.",
+)
 # append RSL-RL cli arguments
 cli_args.add_rsl_rl_args(parser)
 # append AppLauncher cli args
@@ -55,6 +61,7 @@ import os
 import time
 import torch
 
+import isaaclab.sim as sim_utils
 from rsl_rl.runners import OnPolicyRunner
 
 from isaaclab.envs import (
@@ -68,6 +75,8 @@ from isaaclab.utils.assets import retrieve_file_path
 from isaaclab.utils.dict import print_dict
 from isaaclab.utils.pretrained_checkpoint import get_published_pretrained_checkpoint
 
+from isaaclab.markers import VisualizationMarkers, VisualizationMarkersCfg
+
 from isaaclab_rl.rsl_rl import RslRlOnPolicyRunnerCfg, RslRlVecEnvWrapper, export_policy_as_jit, export_policy_as_onnx
 
 import isaaclab_tasks  # noqa: F401
@@ -75,6 +84,65 @@ from isaaclab_tasks.utils import get_checkpoint_path
 from isaaclab_tasks.utils.hydra import hydra_task_config
 
 import race_400m.tasks  # noqa: F401
+
+
+def _create_track_markers(env) -> tuple[VisualizationMarkers, VisualizationMarkers, torch.Tensor]:
+    """Create non-physical visual spheres for one evaluated race environment."""
+    base_env = env.unwrapped
+    if base_env.num_envs != 1:
+        raise ValueError("--track-markers is only supported with --num_envs 1.")
+
+    path_points = torch.as_tensor(base_env.cfg.path_points, dtype=torch.float32, device=base_env.device)
+    track_positions = torch.zeros((len(path_points), 3), dtype=torch.float32, device=base_env.device)
+    track_positions[:, :2] = path_points + base_env.scene.env_origins[0, :2]
+    # Lift spheres slightly above the ground plane; they are visual-only and
+    # never create collisions or alter the policy observation.
+    track_positions[:, 2] = 0.07
+
+    static_cfg = VisualizationMarkersCfg(
+        prim_path="/World/Visuals/RaceTrackPoints",
+        markers={
+            "checkpoint": sim_utils.SphereCfg(
+                radius=0.055,
+                visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.10, 0.45, 1.00)),
+            ),
+            "start": sim_utils.SphereCfg(
+                radius=0.14,
+                visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.10, 1.00, 0.20)),
+            ),
+            "finish": sim_utils.SphereCfg(
+                radius=0.16,
+                visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(1.00, 0.10, 0.10)),
+            ),
+        },
+    )
+    static_markers = VisualizationMarkers(static_cfg)
+    marker_indices = torch.zeros(len(path_points), dtype=torch.int32, device=base_env.device)
+    marker_indices[0] = 1
+    marker_indices[-1] = 2
+    static_markers.visualize(translations=track_positions, marker_indices=marker_indices)
+
+    active_cfg = VisualizationMarkersCfg(
+        prim_path="/World/Visuals/ActiveRaceTarget",
+        markers={
+            "active": sim_utils.SphereCfg(
+                radius=0.20,
+                visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(1.00, 0.85, 0.05)),
+            ),
+        },
+    )
+    active_marker = VisualizationMarkers(active_cfg)
+    active_marker.visualize(translations=track_positions[0].unsqueeze(0))
+    return static_markers, active_marker, track_positions
+
+
+def _update_active_track_marker(active_marker: VisualizationMarkers, track_positions: torch.Tensor, env) -> int:
+    """Move the yellow marker to the waypoint currently used by the reward."""
+    base_env = env.unwrapped
+    target_index = int(base_env._next_target_idx[0].item())
+    target_index = min(target_index, len(track_positions) - 1)
+    active_marker.visualize(translations=track_positions[target_index].unsqueeze(0))
+    return target_index
 
 
 @hydra_task_config(args_cli.task, "rsl_rl_cfg_entry_point")
@@ -108,6 +176,13 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
 
     # create isaac environment
     env = gym.make(args_cli.task, cfg=env_cfg, render_mode="rgb_array" if args_cli.video else None)
+
+    static_track_markers = None
+    active_track_marker = None
+    track_positions = None
+    if args_cli.track_markers:
+        static_track_markers, active_track_marker, track_positions = _create_track_markers(env)
+        print("[INFO] Track markers: blue=checkpoint, green=start, red=finish, yellow=active target.")
 
     # convert to single-agent instance if required by the RL algorithm
     if isinstance(env.unwrapped, DirectMARLEnv):
@@ -157,6 +232,8 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     # reset environment
     obs, _ = env.get_observations()
     timestep = 0
+    simulation_step = 0
+    episode_sim_time = 0.0
     # simulate environment
     while simulation_app.is_running():
         start_time = time.time()
@@ -165,7 +242,22 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
             # agent stepping
             actions = policy(obs)
             # env stepping
-            obs, _, _, _ = env.step(actions)
+            obs, _, dones, _ = env.step(actions)
+        simulation_step += 1
+        episode_sim_time += dt
+        if active_track_marker is not None:
+            target_index = _update_active_track_marker(active_track_marker, track_positions, env)
+            if simulation_step % 25 == 0:
+                root_velocity = env.unwrapped.scene["robot"].data.root_lin_vel_w[0, :2]
+                planar_speed = torch.linalg.vector_norm(root_velocity).item()
+                print(
+                    f"[RACE] sim_time={episode_sim_time:6.2f}s  "
+                    f"target={target_index + 1:3d}/{len(track_positions)}  "
+                    f"planar_speed={planar_speed:4.2f} m/s"
+                )
+        if bool(dones[0].item()):
+            print(f"[RACE] episode reset after {episode_sim_time:.2f}s of simulation time.")
+            episode_sim_time = 0.0
         if args_cli.video:
             timestep += 1
             # Exit the play loop after recording one video
