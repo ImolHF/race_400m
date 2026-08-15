@@ -109,6 +109,31 @@ that structure unchanged. It also adds a rear-swing-foot penalty, which limits
 an airborne ankle to 0.16 m behind the pelvis and reduces exaggerated heel
 kick without suppressing normal forward swing.
 
+## Recommended recovery path: leg-only race task
+
+If the arm-swing policy has reduced lap-completion reliability, use the
+separate `Template-Race-400m-LegOnly` task. It restores the original
+**12 leg actions / 82 policy observations** interface, leaves the arms at the
+configured bent default posture, and disables every arm-control reward. It
+retains the ordered 200-point race logic, self-collision, low-center-of-mass,
+compact-stride, low-air-time, toe-heading, and rear-swing-foot constraints.
+
+Do **not** resume a 16-action arm-swing checkpoint in this task. Resume the
+best earlier 12-action checkpoint that completed the course:
+
+```bash
+torchrun --standalone --nproc_per_node=2 scripts/rsl_rl/train.py \
+  --task Template-Race-400m-LegOnly --headless --distributed \
+  --num_envs 4096 --max_iterations 1500 --run_name leg_only_recovery \
+  --resume --load_run 'YOUR_12_ACTION_COMPLETION_RUN' \
+  --checkpoint 'model_.*.pt'
+```
+
+For a clean comparison, keep the old checkpoint untouched and use a new
+`--run_name`. If it completes consistently after 500--1000 iterations,
+continue to 1500; if completion falls, stop and compare against the unchanged
+baseline rather than continuing the degraded model.
+
 ## Recommended: gait-quality fine-tuning
 
 If you already have a checkpoint that completes the lap, fine-tune it instead

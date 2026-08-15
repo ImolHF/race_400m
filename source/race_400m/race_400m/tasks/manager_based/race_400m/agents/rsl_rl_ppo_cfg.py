@@ -41,3 +41,10 @@ class PPORunnerCfg(RslRlOnPolicyRunnerCfg):
         desired_kl=0.01,
         max_grad_norm=1.0,
     )
+
+
+@configclass
+class LegOnlyPPORunnerCfg(PPORunnerCfg):
+    """Runner name retained so existing 12-action checkpoints can resume."""
+
+    experiment_name = "g1_track_400m"

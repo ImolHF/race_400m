@@ -86,6 +86,22 @@ class ActionsCfg:
 
 
 @configclass
+class LegOnlyActionsCfg:
+    """Original 12-DoF leg controller; arms remain at their safe defaults."""
+
+    joint_pos = JointPositionActionCfg(
+        asset_name="robot",
+        joint_names=[".*_hip_.*", ".*_knee_joint", ".*_ankle_.*"],
+        scale={
+            ".*_hip_.*": 0.25,
+            ".*_knee_joint": 0.25,
+            ".*_ankle_.*": 0.20,
+        },
+        use_default_offset=True,
+    )
+
+
+@configclass
 class RewardsCfg:
     # The order is important. Progress must be evaluated before checkpoint
     # advancement resets the potential for the next target.
@@ -328,6 +344,31 @@ class RewardsCfg:
 
 
 @configclass
+class LegOnlyRewardsCfg(RewardsCfg):
+    """Compact, safe gait shaping without arm-control objectives."""
+
+    arm_posture = None
+    shoulder_pitch_deviation = None
+    arm_swing = None
+    arm_counter_swing = None
+
+    # Return to the more forgiving cadence that previously completed the lap.
+    # Compact-stride and low-air-time limits still prevent hopping.
+    alternating_gait = RewTerm(
+        func=_alternating_foot_gait,
+        weight=0.15,
+        params={
+            "period": 0.55,
+            "offset": (0.0, 0.5),
+            "threshold": 0.55,
+            "sensor_cfg": SceneEntityCfg(
+                "contact_forces", body_names=["left_ankle_roll_link", "right_ankle_roll_link"]
+            ),
+        },
+    )
+
+
+@configclass
 class EventsCfg:
     """Keep physical and navigation state synchronized on every reset."""
 
@@ -383,3 +424,11 @@ class RaceEnvCfg(ManagerBasedRLEnvCfg):
         track_cfg = TrackpointCfg()
         self.path_points = track_cfg.path_points
         print(f"[INFO] Fixed navigation track: {len(self.path_points)} targets, 0 m to 400 m.")
+
+
+@configclass
+class LegOnlyRaceEnvCfg(RaceEnvCfg):
+    """Recovery task compatible with the original 12-action race policy."""
+
+    actions: LegOnlyActionsCfg = LegOnlyActionsCfg()
+    rewards: LegOnlyRewardsCfg = LegOnlyRewardsCfg()
