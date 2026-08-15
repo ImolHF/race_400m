@@ -149,6 +149,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlOnPolic
     max_air_time = _zeros(num_envs)
     min_foot_spacing = torch.full((num_envs,), 1e9, device=device)
     max_rear_swing = _zeros(num_envs)
+    max_waypoint = torch.zeros(num_envs, device=device, dtype=torch.long)
     # event counters
     crossed_events = torch.zeros(num_envs, device=device, dtype=torch.long)
     slide_events = torch.zeros(num_envs, device=device, dtype=torch.long)
@@ -165,20 +166,14 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlOnPolic
 
     step_total = 0
     while len(episodes) < args_cli.num_episodes and simulation_app.is_running():
-        with torch.inference_mode():
-            actions = policy(obs)
-            obs, rew, dones, extras = env.step(actions)
+        # Isaac Lab automatically resets terminated instances *inside*
+        # env.step().  Capture every metric and navigation state before that
+        # call, otherwise a successful finish is observed as waypoint 1 of the
+        # next episode and a fallen pose is observed as the reset standing pose.
+        waypoint_before_step = unwrapped._next_target_idx.clone()
+        finished_before_step = waypoint_before_step >= num_points
 
-        step_total += 1
-        if step_total % 100 == 0:
-            print(f"[INFO] step={step_total}, episodes={len(episodes)}/{args_cli.num_episodes}", flush=True)
-
-        dones_b = dones.bool()
-        time_outs = extras.get("time_outs", torch.zeros_like(dones)).bool()
-        terminated = dones_b & ~time_outs
-        truncated = time_outs
-
-        # ---- instantaneous metrics (all envs) ---------------------------
+        # ---- instantaneous metrics (all environments, before reset) -----
         root_pos = robot.data.root_pos_w
         root_lin_vel = robot.data.root_lin_vel_w
         root_quat = robot.data.root_quat_w
@@ -191,7 +186,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlOnPolic
         lateral = torch.abs(vel_b[:, 1])
         tilt = torch.norm(proj_gravity[:, :2], dim=-1)
 
-        # heading error relative to the course tangent
+        # Heading error is relative to the active ordered-path tangent.
         tangent = _course_tangent(unwrapped)
         forward_b = torch.zeros((num_envs, 3), device=device)
         forward_b[:, 0] = 1.0
@@ -199,9 +194,11 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlOnPolic
         heading_cos = (forward_w[:, :2] * tangent).sum(dim=-1).clamp(-1.0, 1.0)
         heading_err = torch.acos(heading_cos)
 
+        with torch.inference_mode():
+            actions = policy(obs)
+
         jv = torch.norm(joint_vel, dim=-1)
         act_rate = torch.norm(actions - prev_action, dim=-1)
-        prev_action = actions.clone()
 
         # foot spacing / crossing in the robot yaw frame
         foot_off_w = robot.data.body_pos_w[:, foot_asset_ids] - root_pos.unsqueeze(1)
@@ -230,28 +227,41 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlOnPolic
         leg_force = contact.data.net_forces_w[:, leg_contact_ids]
         undesired = (torch.norm(leg_force, dim=-1).max(dim=1).values) > 1.0
 
-        # ---- accumulate -------------------------------------------------
-        alive = ~dones_b  # accumulate only while this env is still in the episode
-        mask = alive.float()
-        step_count += alive.long()
-        sum_planar += planar * mask
-        sum_lateral += lateral * mask
-        sum_tilt += tilt * mask
-        sum_heading_err += heading_err * mask
-        sum_joint_vel += jv * mask
-        sum_action_rate += act_rate * mask
-        sum_air_time += air * mask
-        max_planar = torch.maximum(max_planar, planar * mask)
-        max_lateral = torch.maximum(max_lateral, lateral * mask)
-        max_tilt = torch.maximum(max_tilt, tilt * mask)
-        max_heading_err = torch.maximum(max_heading_err, heading_err * mask)
-        max_joint_vel = torch.maximum(max_joint_vel, jv * mask)
-        max_air_time = torch.maximum(max_air_time, air * mask)
-        min_foot_spacing = torch.minimum(min_foot_spacing, torch.where(dones_b, 1e9, foot_spacing))
-        max_rear_swing = torch.maximum(max_rear_swing, rear * mask)
-        crossed_events += (crossed & alive).long()
-        slide_events += (sliding & alive).long()
-        undesired_events += (undesired & alive).long()
+        # ---- accumulate current (not-yet-reset) state -------------------
+        step_count += 1
+        sum_planar += planar
+        sum_lateral += lateral
+        sum_tilt += tilt
+        sum_heading_err += heading_err
+        sum_joint_vel += jv
+        sum_action_rate += act_rate
+        sum_air_time += air
+        max_planar = torch.maximum(max_planar, planar)
+        max_lateral = torch.maximum(max_lateral, lateral)
+        max_tilt = torch.maximum(max_tilt, tilt)
+        max_heading_err = torch.maximum(max_heading_err, heading_err)
+        max_joint_vel = torch.maximum(max_joint_vel, jv)
+        max_air_time = torch.maximum(max_air_time, air)
+        min_foot_spacing = torch.minimum(min_foot_spacing, foot_spacing)
+        max_rear_swing = torch.maximum(max_rear_swing, rear)
+        max_waypoint = torch.maximum(max_waypoint, waypoint_before_step)
+        crossed_events += crossed.long()
+        slide_events += sliding.long()
+        undesired_events += undesired.long()
+
+        with torch.inference_mode():
+            obs, rew, dones, extras = env.step(actions)
+
+        # These per-term tensors survive _reset_idx() until the next physics
+        # step.  Copy them now; never infer success from reset waypoint state.
+        dones_b = dones.bool()
+        time_outs = extras.get("time_outs", torch.zeros_like(dones)).bool().clone()
+        completion_term = unwrapped.termination_manager.get_term("completed").clone()
+        fallen_term = unwrapped.termination_manager.get_term("robot_fallen").clone()
+
+        step_total += 1
+        if step_total % 100 == 0:
+            print(f"[INFO] step={step_total}, episodes={len(episodes)}/{args_cli.num_episodes}", flush=True)
 
         # ---- finalize finished episodes ----------------------------------
         if dones_b.any():
@@ -259,13 +269,14 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlOnPolic
             for eid in done_ids:
                 if len(episodes) >= args_cli.num_episodes:
                     break
-                n = int(step_count[eid].item()) + 1
-                if n == 0:
-                    continue
-                completed = bool(terminated[eid] and (unwrapped._next_target_idx[eid] >= num_points))
-                fallen = bool(terminated[eid] and not completed)
-                timed_out = bool(truncated[eid])
-                waypoint = int(unwrapped._next_target_idx[eid].item())
+                n = int(step_count[eid].item())
+                # Completion wins if it coincides with the time limit.  This
+                # accepts a robot that has physically crossed the finish line
+                # on the final allowed control step.
+                completed = bool(finished_before_step[eid] or completion_term[eid])
+                fallen = bool(fallen_term[eid] and not completed)
+                timed_out = bool(time_outs[eid] and not completed)
+                waypoint = int(max_waypoint[eid].item())
                 episodes.append(
                     {
                         "env_id": int(eid),
@@ -273,6 +284,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlOnPolic
                         "fallen": fallen,
                         "timeout": timed_out,
                         "max_waypoint": waypoint,
+                        "max_progress_m": float(min(waypoint, num_points - 1) * 2.0),
                         "duration_s": float(n * dt),
                         "mean_planar_speed": float(sum_planar[eid] / n),
                         "max_planar_speed": float(max_planar[eid]),
@@ -302,7 +314,11 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlOnPolic
                 max_planar[eid] = 0; max_lateral[eid] = 0; max_tilt[eid] = 0
                 max_heading_err[eid] = 0; max_joint_vel[eid] = 0; max_air_time[eid] = 0
                 min_foot_spacing[eid] = 1e9; max_rear_swing[eid] = 0
+                max_waypoint[eid] = 0
                 crossed_events[eid] = 0; slide_events[eid] = 0; undesired_events[eid] = 0
+
+        prev_action = actions.clone()
+        prev_action[dones_b] = 0.0
 
     env.close()
 
@@ -360,6 +376,8 @@ def _write_outputs(args_cli, checkpoint, episodes, num_points, obs_dim, act_dim)
         "completion_rate_pct": _pct(lambda e: e["completed"]),
         "fall_rate_pct": _pct(lambda e: e["fallen"]),
         "timeout_rate_pct": _pct(lambda e: e["timeout"]),
+        "mean_max_waypoint": _mean("max_waypoint"),
+        "mean_max_progress_m": _mean("max_progress_m"),
         "mean_finish_time_s": round(statistics.mean(finish_times), 4) if finish_times else None,
         "median_finish_time_s": round(statistics.median(finish_times), 4) if finish_times else None,
         "p90_finish_time_s": _p90_finish(finish_times),
