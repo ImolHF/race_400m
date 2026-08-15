@@ -287,3 +287,47 @@ This is a simulation training project. The current navigation method relies on
 preconfigured ordered coordinates and simulator state; it is not visual or
 LiDAR self-navigation. Test every new checkpoint in simulation before any
 sim2sim or physical-robot work.
+
+## Checkpoint evaluation (no training)
+
+`scripts/rsl_rl/evaluate_race.py` evaluates an existing checkpoint in headless
+mode without training, exporting a policy, recording video, or mutating any
+reward / task / checkpoint file.  It writes `episodes.csv`, `summary.json` and
+`report.md` into `--output_dir`.
+
+The two checkpoints use different action/observation interfaces and must be
+evaluated with their own matching `--task`; never cross-load them:
+
+| checkpoint | task | action / observation |
+|---|---|---|
+| `leg_only_high_cadence_model.pt` | `Template-Race-400m-LegOnly-HighCadence` | 12 / 82 |
+| `locked_elbow_arm_model.pt` | `Template-Race-400m` | 14 / 84 |
+
+```bash
+python scripts/rsl_rl/evaluate_race.py \
+  --task Template-Race-400m-LegOnly-HighCadence \
+  --checkpoint /abs/path/leg_only_high_cadence_model.pt \
+  --num_episodes 100 --num_envs 64 --headless \
+  --output_dir outputs/eval/leg_only_high_cadence
+
+python scripts/rsl_rl/evaluate_race.py \
+  --task Template-Race-400m \
+  --checkpoint /abs/path/locked_elbow_arm_model.pt \
+  --num_episodes 100 --num_envs 64 --headless \
+  --output_dir outputs/eval/locked_elbow_arm
+```
+
+Compare the two summaries:
+
+```bash
+python scripts/rsl_rl/compare_summaries.py \
+  --baseline outputs/eval/leg_only_high_cadence/summary.json \
+  --candidate outputs/eval/locked_elbow_arm/summary.json \
+  --output outputs/eval/comparison.md
+```
+
+Comparison priority: completion rate > fall rate > finish time > lateral speed
+/ heading error > foot spacing & crossing > action smoothness.
+
+These runs measure repeatability and base stability only; they are **not** a
+sim2real safety certificate.
