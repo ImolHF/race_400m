@@ -377,6 +377,17 @@ scripts/rsl_rl/evaluate_selected_models_two_gpu.sh \
   outputs/eval/moderate_robustness
 ```
 
+The launcher defaults to physical GPUs 0 and 1. On a shared server, select
+different cards explicitly; for example, use GPUs 6 and 7:
+
+```bash
+EVAL_GPU_LEG=6 EVAL_GPU_ARM=7 ROBUSTNESS_SUITE=moderate \
+scripts/rsl_rl/evaluate_selected_models_two_gpu.sh \
+  /absolute/path/leg_only_high_cadence_model.pt \
+  /absolute/path/locked_elbow_arm_model.pt \
+  outputs/eval/moderate_robustness
+```
+
 `strong` widens all of those ranges and should be treated as a stress test,
 not an estimate of expected real-world performance. Compare `completion_rate`,
 `fall_rate`, and `mean_max_progress_m` before comparing speed or gait style.
