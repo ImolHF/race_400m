@@ -43,7 +43,7 @@ from .mdp.rewards import (
     swing_foot_forward as _swing_foot_forward,
     rear_swing_foot_penalty as _rear_swing_foot_penalty,
 )
-from .mdp.delayed_actions import DelayedJointPositionActionCfg, executed_action as _executed_action
+from .mdp.delayed_actions import DelayedJointPositionActionCfg, RandomOneStepDelayJointPositionActionCfg, executed_action as _executed_action
 from .mdp.terminations import is_completed as _is_completed
 from .mdp.terminations import is_completed_after_stop as _is_completed_after_stop
 from .mdp.terminations import robot_fallen as _robot_fallen
@@ -515,6 +515,17 @@ class DelayedActionsCfg:
 
 
 @configclass
+class RandomDelayActionsCfg:
+    """Teacher-compatible 14-action interface with episode-wise 0/1-step delay."""
+
+    joint_pos = RandomOneStepDelayJointPositionActionCfg(
+        asset_name="robot", joint_names=[".*_hip_.*", ".*_knee_joint", ".*_ankle_.*", ".*_shoulder_pitch_joint"],
+        scale={".*_hip_.*": 0.25, ".*_knee_joint": 0.25, ".*_ankle_.*": 0.20, ".*_shoulder_pitch_joint": 0.18},
+        use_default_offset=True, delay_probability=0.5,
+    )
+
+
+@configclass
 class LockedElbowStartStopRewardsCfg(RewardsCfg):
     """Phase-aware start/stop shaping while retaining locked-elbow arm gait rewards."""
 
@@ -673,6 +684,13 @@ class DelayedLockedElbowRaceEnvCfg(RaceEnvCfg):
 
     observations: DelayedObservationsCfg = DelayedObservationsCfg()
     actions: DelayedActionsCfg = DelayedActionsCfg()
+
+
+@configclass
+class RandomDelayLockedElbowRaceEnvCfg(RaceEnvCfg):
+    """84-observation teacher fine-tuning task robust to 0/40 ms action delay."""
+
+    actions: RandomDelayActionsCfg = RandomDelayActionsCfg()
 
 
 @configclass

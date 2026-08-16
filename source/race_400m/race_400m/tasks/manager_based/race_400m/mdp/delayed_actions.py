@@ -59,3 +59,35 @@ class DelayedJointPositionActionCfg(JointPositionActionCfg):
 
     class_type: type = DelayedJointPositionAction
     delay_steps: int = 1
+
+
+class RandomOneStepDelayJointPositionAction(JointPositionAction):
+    """Per-episode 0/1-step action delay, preserving the base action interface."""
+
+    cfg: "RandomOneStepDelayJointPositionActionCfg"
+
+    def __init__(self, cfg: "RandomOneStepDelayJointPositionActionCfg", env) -> None:
+        super().__init__(cfg, env)
+        self._previous_target = self._offset.clone()
+        self._use_delay = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+
+    def process_actions(self, actions: torch.Tensor) -> None:
+        super().process_actions(actions)
+        latest = self._processed_actions.clone()
+        self._processed_actions = torch.where(self._use_delay.unsqueeze(-1), self._previous_target, latest)
+        self._previous_target[:] = latest
+
+    def reset(self, env_ids: Sequence[int] | None = None) -> None:
+        super().reset(env_ids)
+        if env_ids is None:
+            env_ids = torch.arange(self.num_envs, device=self.device)
+        self._previous_target[env_ids] = self._offset[env_ids]
+        self._use_delay[env_ids] = torch.rand(len(env_ids), device=self.device) < self.cfg.delay_probability
+
+
+@configclass
+class RandomOneStepDelayJointPositionActionCfg(JointPositionActionCfg):
+    """Configuration for episode-wise 0/1 control-period latency randomization."""
+
+    class_type: type = RandomOneStepDelayJointPositionAction
+    delay_probability: float = 0.5

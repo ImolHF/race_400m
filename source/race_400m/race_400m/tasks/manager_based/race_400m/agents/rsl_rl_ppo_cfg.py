@@ -66,6 +66,21 @@ class DelayedLockedElbowPPORunnerCfg(PPORunnerCfg):
 
 
 @configclass
+class RandomDelayLockedElbowPPORunnerCfg(PPORunnerCfg):
+    """Conservative fine-tuning of the proven 84-observation arm policy."""
+
+    experiment_name = "g1_track_400m_random_delay"
+    num_steps_per_env = 12
+    max_iterations = 4000
+    save_interval = 50
+    algorithm = RslRlPpoAlgorithmCfg(
+        value_loss_coef=1.0, use_clipped_value_loss=True, clip_param=0.2, entropy_coef=0.004,
+        num_learning_epochs=5, num_mini_batches=4, learning_rate=1.0e-4, schedule="adaptive",
+        gamma=0.99, lam=0.95, desired_kl=0.01, max_grad_norm=1.0,
+    )
+
+
+@configclass
 class LegOnlyHighCadencePPORunnerCfg(LegOnlyPPORunnerCfg):
     """Same policy interface; the completed leg-only checkpoint can resume."""
 
