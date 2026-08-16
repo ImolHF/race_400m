@@ -47,7 +47,7 @@ from .mdp.delayed_actions import DelayedJointPositionActionCfg, RandomOneStepDel
 from .mdp.terminations import is_completed as _is_completed
 from .mdp.terminations import is_completed_after_stop as _is_completed_after_stop
 from .mdp.terminations import robot_fallen as _robot_fallen
-from .track_scene_cfg import TrackSceneCfg, TrackpointCfg
+from .track_scene_cfg import RobustTrackSceneCfg, TrackSceneCfg, TrackpointCfg
 
 
 @configclass
@@ -690,6 +690,14 @@ class DelayedLockedElbowRaceEnvCfg(RaceEnvCfg):
 class RandomDelayLockedElbowRaceEnvCfg(RaceEnvCfg):
     """84-observation teacher fine-tuning task robust to 0/40 ms action delay."""
 
+    actions: RandomDelayActionsCfg = RandomDelayActionsCfg()
+
+
+@configclass
+class RobustPhysicsRaceEnvCfg(RaceEnvCfg):
+    """From-scratch 200-point task with conservative G1 physical parameters."""
+
+    scene: RobustTrackSceneCfg = RobustTrackSceneCfg(num_envs=4096, env_spacing=2.5)
     actions: RandomDelayActionsCfg = RandomDelayActionsCfg()
 
 

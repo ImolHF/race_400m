@@ -14,7 +14,7 @@ from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.sensors import ContactSensorCfg
 from isaaclab.utils import configclass
 
-from race_400m.config.g1_robotcfg import G1_CONFIG
+from race_400m.config.g1_robotcfg import G1_CONFIG, G1_ROBUST_CONFIG
 
 
 @configclass
@@ -29,6 +29,13 @@ class TrackSceneCfg(InteractiveSceneCfg):
         prim_path="/World/Light",
         spawn=sim_utils.DomeLightCfg(intensity=3000.0, color=(0.75, 0.75, 0.75)),
     )
+
+
+@configclass
+class RobustTrackSceneCfg(TrackSceneCfg):
+    """Track scene with MuJoCo/real-actuator-aligned G1 parameters."""
+
+    robot: ArticulationCfg = G1_ROBUST_CONFIG.replace(prim_path="{ENV_REGEX_NS}/Robot")
     robot: ArticulationCfg = G1_CONFIG.replace(prim_path="{ENV_REGEX_NS}/Robot")
     # GPU contact history is required by the imported G1 gait rewards.  It is
     # not a perception sensor and is never exposed as a policy observation.

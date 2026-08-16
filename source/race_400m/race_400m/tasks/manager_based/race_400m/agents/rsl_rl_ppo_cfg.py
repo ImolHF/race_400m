@@ -81,6 +81,14 @@ class RandomDelayLockedElbowPPORunnerCfg(PPORunnerCfg):
 
 
 @configclass
+class RobustPhysicsPPORunnerCfg(PPORunnerCfg):
+    experiment_name = "g1_track_400m_robust_physics"
+    num_steps_per_env = 24
+    max_iterations = 10000
+    save_interval = 50
+
+
+@configclass
 class LegOnlyHighCadencePPORunnerCfg(LegOnlyPPORunnerCfg):
     """Same policy interface; the completed leg-only checkpoint can resume."""
 

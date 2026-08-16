@@ -171,3 +171,24 @@ G1_CONFIG = ArticulationCfg(
         ),
     },
 )
+
+# Conservative physical baseline aligned with the public G1 29-DoF MuJoCo
+# asset: bent-knee standing pose and actuator effort/PD ranges.  Kept separate
+# from G1_CONFIG so existing checkpoints remain reproducible.
+G1_ROBUST_CONFIG = G1_CONFIG.replace(
+    init_state=ArticulationCfg.InitialStateCfg(
+        pos=(0.0, 0.0, 0.76),
+        joint_pos={
+            ".*_hip_pitch_joint": -0.312, ".*_knee_joint": 0.669, ".*_ankle_pitch_joint": -0.363,
+            ".*_elbow_joint": 0.60, "left_shoulder_roll_joint": 0.20, "right_shoulder_roll_joint": -0.20,
+            "left_shoulder_pitch_joint": 0.20, "right_shoulder_pitch_joint": 0.20,
+        },
+    ),
+    actuators={
+        "hips_yaw": ImplicitActuatorCfg(joint_names_expr=[".*_hip_pitch_joint", ".*_hip_yaw_joint"], effort_limit_sim=88.0, velocity_limit_sim=32.0, stiffness=100.0, damping=2.0),
+        "hips_roll_knee": ImplicitActuatorCfg(joint_names_expr=[".*_hip_roll_joint", ".*_knee_joint"], effort_limit_sim=139.0, velocity_limit_sim=20.0, stiffness={".*_hip_roll_joint": 100.0, ".*_knee_joint": 150.0}, damping={".*_hip_roll_joint": 2.0, ".*_knee_joint": 4.0}),
+        "ankles": ImplicitActuatorCfg(joint_names_expr=[".*_ankle_.*"], effort_limit_sim=25.0, velocity_limit_sim=37.0, stiffness=40.0, damping=2.0),
+        "waist": ImplicitActuatorCfg(joint_names_expr=["waist.*"], effort_limit_sim=25.0, velocity_limit_sim=37.0, stiffness=40.0, damping=5.0),
+        "arms": ImplicitActuatorCfg(joint_names_expr=[".*_shoulder_.*", ".*_elbow_joint", ".*_wrist.*"], effort_limit_sim=25.0, velocity_limit_sim=37.0, stiffness=40.0, damping=1.0),
+    },
+)
