@@ -25,3 +25,14 @@ python deploy/dry_run.py --policy logs/rsl_rl/g1_track_400m/<run>/exported/polic
 The main locked-elbow policy was trained without an action-delay term, so this
 dry-run deliberately uses zero added deployment delay. It is an interface and
 safety-contract check, not a physics or hardware validation.
+
+## Tonight's deployment package
+
+Generate the training-identical 201-point route, then validate its policy contract:
+
+```bash
+python deploy/generate_waypoints.py
+python deploy/preflight.py --policy <exported-policy.pt> --waypoints deploy/config/waypoints_training.json
+```
+
+Use [TRUE_ROBOT_RUNBOOK.md](TRUE_ROBOT_RUNBOOK.md) for the protected first-day sequence.
