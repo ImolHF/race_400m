@@ -28,6 +28,10 @@ JOINT_NAMES = [
 POLICY_IDS = np.array([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 15, 22])
 ACTION_SCALE = np.array([0.25] * 4 + [0.20, 0.20] + [0.25] * 4 + [0.20, 0.20] + [0.18, 0.18], dtype=np.float32)
 DEFAULT_Q = np.array([-0.20, 0, 0, 0.42, -0.23, 0, -0.20, 0, 0, 0.42, -0.23, 0, 0, 0, 0, 0, 0, 0, 0.95, 0, 0, 0, 0, 0, 0, 0.95, 0, 0, 0], dtype=np.float32)
+# This is a mechanically stable G1 29-DoF pose for the official Unitree MJCF.
+# It is used only to initialize MuJoCo; policy observations remain relative to
+# DEFAULT_Q, exactly as during Isaac Lab training.
+MUJOCO_STAND_Q = np.array([-0.312, 0, 0, 0.669, -0.363, 0, -0.312, 0, 0, 0.669, -0.363, 0, 0, 0, 0, 0.20, 0.20, 0, 0.60, 0, 0, 0, 0.20, -0.20, 0, 0.60, 0, 0, 0], dtype=np.float32)
 KP = np.array([420, 320, 320, 420, 260, 260] * 2 + [250] * 3 + [100, 160, 160, 320, 160, 160, 160, 100, 160, 160, 320, 160, 160, 160], dtype=np.float32)
 KD = np.array([24, 16, 16, 24, 14, 14] * 2 + [25] * 3 + [10, 16, 16, 32, 16, 16, 16, 10, 16, 16, 32, 16, 16, 16], dtype=np.float32)
 
@@ -72,7 +76,7 @@ def main() -> None:
     if actual != JOINT_NAMES:
         raise RuntimeError("MuJoCo joint order differs from the verified G1 29-DoF contract.")
     policy = torch.jit.load(str(args.policy), map_location="cpu").eval()
-    data.qpos[:3] = (0, 0, 0.74); data.qpos[3:7] = (1, 0, 0, 0); data.qpos[7:] = DEFAULT_Q
+    data.qpos[:3] = (0, 0, 0.76); data.qpos[3:7] = (1, 0, 0, 0); data.qpos[7:] = MUJOCO_STAND_Q
     mujoco.mj_forward(model, data)
     points, target_idx, previous_action = track(), 1, np.zeros(14, np.float32)
     target_q, fallen, max_tilt, policy_steps = DEFAULT_Q.copy(), False, 0.0, 0
