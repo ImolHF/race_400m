@@ -43,7 +43,7 @@ from .mdp.rewards import (
     swing_foot_forward as _swing_foot_forward,
     rear_swing_foot_penalty as _rear_swing_foot_penalty,
 )
-from .mdp.delayed_actions import DelayedJointPositionActionCfg
+from .mdp.delayed_actions import DelayedJointPositionActionCfg, executed_action as _executed_action
 from .mdp.terminations import is_completed as _is_completed
 from .mdp.terminations import is_completed_after_stop as _is_completed_after_stop
 from .mdp.terminations import robot_fallen as _robot_fallen
@@ -85,6 +85,23 @@ class StartStopObservationsCfg(ObservationsCfg):
             params={"cruise_speed": 1.8, "start_points": 10, "stop_points": 0, "brake_time_s": 3.0},
             scale=0.5,
         )
+
+    policy: PolicyCfg = PolicyCfg()
+
+
+@configclass
+class DelayedObservationsCfg(ObservationsCfg):
+    """Policy observations for a delayed actuator command channel.
+
+    The normal ``previous_action`` is the most recent *policy* command.
+    ``executed_action`` additionally tells the actor which absolute target is
+    currently at the joints, including the standing target during the first
+    delayed control period after a reset.
+    """
+
+    @configclass
+    class PolicyCfg(ObservationsCfg.PolicyCfg):
+        executed_action = ObsTerm(func=_executed_action)
 
     policy: PolicyCfg = PolicyCfg()
 
@@ -654,6 +671,7 @@ class RaceEnvCfg(ManagerBasedRLEnvCfg):
 class DelayedLockedElbowRaceEnvCfg(RaceEnvCfg):
     """14-action locked-elbow course policy trained with a 40 ms action delay."""
 
+    observations: DelayedObservationsCfg = DelayedObservationsCfg()
     actions: DelayedActionsCfg = DelayedActionsCfg()
 
 

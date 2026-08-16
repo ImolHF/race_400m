@@ -52,12 +52,16 @@ class LegOnlyPPORunnerCfg(PPORunnerCfg):
 
 @configclass
 class DelayedLockedElbowPPORunnerCfg(PPORunnerCfg):
-    """Continuation run from the 84-observation locked-elbow checkpoint."""
+    """From-scratch PPO run for the delayed 98-observation controller."""
 
-    # Retain this root so --resume can locate the original model_7999.pt.
-    experiment_name = "g1_track_400m"
-    num_steps_per_env = 16
-    max_iterations = 2000
+    # The executed-action observation changes the actor input from 84 to 98,
+    # so loading an old no-delay actor would be invalid.  Keep its logs in a
+    # separate root and learn the timing-aware gait from scratch.
+    experiment_name = "g1_track_400m_locked_elbow_delay"
+    # Eight GPUs x 4096 envs x 12 steps keeps each PPO update at 393,216
+    # transitions, matching the proven multi-GPU configuration.
+    num_steps_per_env = 12
+    max_iterations = 10000
     save_interval = 50
 
 

@@ -10,6 +10,19 @@ from isaaclab.envs.mdp.actions import JointPositionAction, JointPositionActionCf
 from isaaclab.utils import configclass
 
 
+def executed_action(env, action_name: str = "joint_pos") -> torch.Tensor:
+    """Return the position target that is actually being applied this step.
+
+    ``last_action`` reports the policy's latest command.  With a transport
+    delay that is not necessarily the command received by the actuators.
+    Exposing the executed target makes the delay-augmented control process
+    Markov to PPO and, importantly, reports the default standing target after
+    every reset.
+    """
+
+    return env.action_manager.get_term(action_name).processed_actions
+
+
 class DelayedJointPositionAction(JointPositionAction):
     """Apply position targets after a fixed number of environment control steps."""
 
