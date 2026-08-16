@@ -35,6 +35,16 @@ gym.register(
 )
 
 gym.register(
+    id="Template-Race-400m-LockedElbow-Delay",
+    entry_point="isaaclab.envs:ManagerBasedRLEnv",
+    disable_env_checker=True,
+    kwargs={
+        "env_cfg_entry_point": f"{__name__}.race_400m_env_cfg:DelayedLockedElbowRaceEnvCfg",
+        "rsl_rl_cfg_entry_point": f"{agents.__name__}.rsl_rl_ppo_cfg:DelayedLockedElbowPPORunnerCfg",
+    },
+)
+
+gym.register(
     id="Template-Race-400m-LegOnly-HighCadence",
     entry_point="isaaclab.envs:ManagerBasedRLEnv",
     disable_env_checker=True,

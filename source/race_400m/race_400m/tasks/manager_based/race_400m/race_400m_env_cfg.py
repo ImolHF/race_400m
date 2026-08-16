@@ -43,6 +43,7 @@ from .mdp.rewards import (
     swing_foot_forward as _swing_foot_forward,
     rear_swing_foot_penalty as _rear_swing_foot_penalty,
 )
+from .mdp.delayed_actions import DelayedJointPositionActionCfg
 from .mdp.terminations import is_completed as _is_completed
 from .mdp.terminations import is_completed_after_stop as _is_completed_after_stop
 from .mdp.terminations import robot_fallen as _robot_fallen
@@ -479,6 +480,24 @@ class LegOnlyStartStopRewardsCfg(LegOnlyHighCadenceRewardsCfg):
 
 
 @configclass
+class DelayedActionsCfg:
+    """Same 14-DoF interface as ``ActionsCfg``, executed one control step late."""
+
+    joint_pos = DelayedJointPositionActionCfg(
+        asset_name="robot",
+        joint_names=[".*_hip_.*", ".*_knee_joint", ".*_ankle_.*", ".*_shoulder_pitch_joint"],
+        scale={
+            ".*_hip_.*": 0.25,
+            ".*_knee_joint": 0.25,
+            ".*_ankle_.*": 0.20,
+            ".*_shoulder_pitch_joint": 0.18,
+        },
+        use_default_offset=True,
+        delay_steps=1,
+    )
+
+
+@configclass
 class LockedElbowStartStopRewardsCfg(RewardsCfg):
     """Phase-aware start/stop shaping while retaining locked-elbow arm gait rewards."""
 
@@ -629,6 +648,13 @@ class RaceEnvCfg(ManagerBasedRLEnvCfg):
         track_cfg = TrackpointCfg()
         self.path_points = track_cfg.path_points
         print(f"[INFO] Fixed navigation track: {len(self.path_points)} targets, 0 m to 400 m.")
+
+
+@configclass
+class DelayedLockedElbowRaceEnvCfg(RaceEnvCfg):
+    """14-action locked-elbow course policy trained with a 40 ms action delay."""
+
+    actions: DelayedActionsCfg = DelayedActionsCfg()
 
 
 @configclass

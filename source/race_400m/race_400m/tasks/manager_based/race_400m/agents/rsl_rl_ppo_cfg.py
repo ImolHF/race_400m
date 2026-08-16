@@ -51,6 +51,17 @@ class LegOnlyPPORunnerCfg(PPORunnerCfg):
 
 
 @configclass
+class DelayedLockedElbowPPORunnerCfg(PPORunnerCfg):
+    """Continuation run from the 84-observation locked-elbow checkpoint."""
+
+    # Retain this root so --resume can locate the original model_7999.pt.
+    experiment_name = "g1_track_400m"
+    num_steps_per_env = 16
+    max_iterations = 2000
+    save_interval = 50
+
+
+@configclass
 class LegOnlyHighCadencePPORunnerCfg(LegOnlyPPORunnerCfg):
     """Same policy interface; the completed leg-only checkpoint can resume."""
 
