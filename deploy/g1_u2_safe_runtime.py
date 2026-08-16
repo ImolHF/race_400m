@@ -13,6 +13,7 @@ from abc import ABC, abstractmethod
 from collections import deque
 from dataclasses import dataclass, field
 from enum import Enum
+import json
 from pathlib import Path
 from typing import Sequence
 
@@ -79,14 +80,53 @@ class RuntimeConfig:
     policy_path: Path
     waypoints_xy: Sequence[Sequence[float]]
     control_dt_s: float = 0.04
-    action_delay_steps: int = 1
-    # Conservative hardware-side limits; tune only after hanging tests.
-    max_action_abs: float = 1.0
-    max_target_step_rad: float = 0.05
-    max_tilt_rad: float = 0.45
-    command_timeout_s: float = 0.10
+    waypoint_reach_radius_m: float = 1.0
+    # The selected locked-elbow main policy was trained without command delay.
+    action_delay_steps: int = 0
+    # These first-day limits are intentionally much tighter than the training
+    # action scale.  They are for suspended/slow tests only; a successful gait
+    # test must deliberately raise max_target_step_rad towards 0.20--0.25.
+    max_action_abs: float = 0.5
+    max_target_step_rad: float = 0.03
+    max_tilt_rad: float = 0.30
+    command_timeout_s: float = 0.08
+    dry_run: bool = True
     kp: np.ndarray = field(default_factory=lambda: np.array([60, 60, 60, 100, 40, 40] * 2 + [40] * 17, dtype=np.float32))
     kd: np.ndarray = field(default_factory=lambda: np.array([1, 1, 1, 2, 1, 1] * 2 + [1] * 17, dtype=np.float32))
+
+    @classmethod
+    def from_json(cls, config_path: Path, *, policy_path: Path | None = None) -> "RuntimeConfig":
+        """Load the one authoritative deployment configuration.
+
+        Relative policy/waypoint paths are resolved from the repository root
+        (the parent of ``deploy``), not from the caller's working directory.
+        ``policy_path`` is an explicit CLI-only override for the placeholder
+        in the checked-in template.
+        """
+        config_path = config_path.resolve()
+        raw = json.loads(config_path.read_text(encoding="utf-8"))
+        required = {
+            "policy_path", "waypoints_path", "control_dt_s", "waypoint_reach_radius_m",
+            "action_delay_steps", "max_action_abs", "max_target_step_rad", "max_tilt_rad",
+            "command_timeout_s", "dry_run",
+        }
+        missing = required - raw.keys()
+        if missing:
+            raise ValueError(f"Missing deployment configuration fields: {sorted(missing)}")
+        repo_root = config_path.parents[2]
+        chosen_policy = policy_path or Path(raw["policy_path"])
+        if not chosen_policy.is_absolute():
+            chosen_policy = repo_root / chosen_policy
+        waypoint_path = Path(raw["waypoints_path"])
+        if not waypoint_path.is_absolute():
+            waypoint_path = repo_root / waypoint_path
+        points = json.loads(waypoint_path.read_text(encoding="utf-8"))
+        if len(points) != 201 or any(not isinstance(point, list) or len(point) != 2 for point in points):
+            raise ValueError("Expected exactly 201 [x, y] waypoints.")
+        config = cls(policy_path=chosen_policy, waypoints_xy=points, **{key: raw[key] for key in required - {"policy_path", "waypoints_path"}})
+        if config.control_dt_s <= 0 or config.action_delay_steps < 0:
+            raise ValueError("control_dt_s must be positive and action_delay_steps non-negative.")
+        return config
 
 
 def _yaw(quat: np.ndarray) -> float:
@@ -106,8 +146,9 @@ def _projected_gravity(quat: np.ndarray) -> np.ndarray:
 class SafeRaceRuntime:
     """Policy invocation, 200-point navigation and command safety guard."""
 
-    def __init__(self, config: RuntimeConfig, adapter: G1U2Adapter, dry_run: bool = True):
-        self.cfg, self.adapter, self.dry_run = config, adapter, dry_run
+    def __init__(self, config: RuntimeConfig, adapter: G1U2Adapter, dry_run: bool | None = None):
+        self.cfg, self.adapter = config, adapter
+        self.dry_run = config.dry_run if dry_run is None else dry_run
         self.policy = torch.jit.load(str(config.policy_path), map_location="cpu").eval()
         self.waypoints = np.asarray(config.waypoints_xy, dtype=np.float32)
         if self.waypoints.ndim != 2 or self.waypoints.shape[1] != 2:
@@ -170,7 +211,8 @@ class SafeRaceRuntime:
         target[POLICY_MOTOR_IDS] = delayed
         target = np.clip(target, self.last_target - self.cfg.max_target_step_rad, self.last_target + self.cfg.max_target_step_rad)
         self.last_target, self.previous_action = target, action
-        if np.linalg.norm(self.waypoints[self.target_index] - state.position_w_xy) < 0.6 and self.target_index < len(self.waypoints) - 1:
+        if (np.linalg.norm(self.waypoints[self.target_index] - state.position_w_xy) < self.cfg.waypoint_reach_radius_m
+                and self.target_index < len(self.waypoints) - 1):
             self.target_index += 1
         command = MotorCommand(target, np.zeros(29, np.float32), self.cfg.kp, self.cfg.kd, np.zeros(29, np.float32))
         if not self.dry_run:

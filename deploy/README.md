@@ -1,8 +1,8 @@
 # G1 U2 deployment layer
 
 `g1_u2_safe_runtime.py` is an offline-safe policy runtime. It builds the exact
-84-value observation for the 14-action locked-elbow policy, applies a 40 ms
-action FIFO, maps the output to the official 29-motor G1 order, and refuses to
+84-value observation for the 14-action locked-elbow policy, maps the output to
+the official 29-motor G1 order, and refuses to
 send hardware commands unless a lab SDK2 adapter, explicit arming gate, and
 `dry_run=False` are supplied.
 
@@ -22,9 +22,11 @@ file, not `model_7999.pt`:
 python deploy/dry_run.py --policy logs/rsl_rl/g1_track_400m/<run>/exported/policy.pt --steps 100
 ```
 
-The main locked-elbow policy was trained without an action-delay term, so this
-dry-run deliberately uses zero added deployment delay. It is an interface and
-safety-contract check, not a physics or hardware validation.
+The main locked-elbow policy was trained without an action-delay term. Its
+single source of deployment settings is `config/deployment_config.json`, where
+`action_delay_steps` must remain `0`. This package rejects an 85-observation
+start/stop policy export rather than silently running it with the wrong input.
+It is an interface and safety-contract check, not a physics or hardware validation.
 
 ## Tonight's deployment package
 
@@ -32,7 +34,7 @@ Generate the training-identical 201-point route, then validate its policy contra
 
 ```bash
 python deploy/generate_waypoints.py
-python deploy/preflight.py --policy <exported-policy.pt> --waypoints deploy/config/waypoints_training.json
+python deploy/preflight.py --policy <exported-policy.pt>
 ```
 
 Use [TRUE_ROBOT_RUNBOOK.md](TRUE_ROBOT_RUNBOOK.md) for the protected first-day sequence.

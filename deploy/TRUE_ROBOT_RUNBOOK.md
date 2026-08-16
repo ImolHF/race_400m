@@ -11,7 +11,7 @@ Use only the exported `policy.pt` of the chosen main policy. Keep `dry_run=true`
 
 ## Hard safety gates
 
-Do not progress if any condition fails: wrong left/right joint direction, command timeout above 80 ms, tilt above 0.30 rad, joint target jump above 0.03 rad, unexpected contact, heating, oscillation, or unreliable E-stop.
+Do not progress if any condition fails: wrong left/right joint direction, command timeout above 80 ms, tilt above 0.30 rad, joint target jump above the configured limit, unexpected contact, heating, oscillation, or unreliable E-stop.
 
 ## Test order
 
@@ -20,7 +20,8 @@ Do not progress if any condition fails: wrong left/right joint direction, comman
 3. Ground: stand 60 s.
 4. Protected 3–5 m walk, repeated three times.
 5. Protected 5–10 m runs, log every trial.
-6. Only after repeatable success: 10–20 m; do not attempt 400 m on first day.
+6. Only after repeatable success, change **only** `max_target_step_rad` in `deployment_config.json` gradually from 0.03 to 0.05, 0.10, then towards 0.20–0.25 rad. The last range is needed to recover the trained gait; never jump directly there.
+7. At each change, repeat suspended and protected short tests. Only after repeatable success: 10–20 m; do not attempt 400 m on first day.
 
 ## Required log fields
 

@@ -9,36 +9,11 @@ and 29-motor command construction.
 from __future__ import annotations
 
 import argparse
-import math
 from pathlib import Path
 
 import numpy as np
 
 from g1_u2_safe_runtime import DEFAULT_Q, G1U2Adapter, G1U2State, MotorCommand, RuntimeConfig, SafeRaceRuntime
-
-
-def generate_training_track() -> list[list[float]]:
-    """Reproduce the fixed 201-point track used by the main training task."""
-
-    straight, radius, start, gap = 110.43, 23.24, 32.5, 2.0
-    half_curve = math.pi * radius
-    points: list[list[float]] = []
-    for index in range(201):
-        distance = index * gap
-        if distance < start:
-            point = (distance, 0.0)
-        elif distance < start + half_curve:
-            theta = (distance - start) / radius
-            point = (start + radius * math.sin(theta), radius * (1.0 - math.cos(theta)))
-        elif distance < start + half_curve + straight:
-            point = (start - (distance - start - half_curve), 2.0 * radius)
-        elif distance < start + 2.0 * half_curve + straight:
-            theta = (distance - start - half_curve - straight) / radius
-            point = (-77.93 - radius * math.sin(theta), 2.0 * radius - radius * (1.0 - math.cos(theta)))
-        else:
-            point = (-77.0 + distance - start - 2.0 * half_curve - straight, 0.0)
-        points.append([float(point[0]), float(point[1])])
-    return points
 
 
 class NominalStandingAdapter(G1U2Adapter):
@@ -72,6 +47,7 @@ class NominalStandingAdapter(G1U2Adapter):
 def main() -> None:
     parser = argparse.ArgumentParser(description="Offline-only G1 U2 policy dry-run.")
     parser.add_argument("--policy", type=Path, required=True, help="Exported TorchScript policy.pt, not an RSL-RL model_*.pt checkpoint.")
+    parser.add_argument("--config", type=Path, default=Path(__file__).parent / "config" / "deployment_config.json")
     parser.add_argument("--steps", type=int, default=100, help="Number of 40 ms policy cycles to validate.")
     args = parser.parse_args()
     if args.steps < 1:
@@ -80,9 +56,10 @@ def main() -> None:
         raise FileNotFoundError(args.policy)
 
     adapter = NominalStandingAdapter()
-    # The selected main model was trained without a command-delay action term.
-    config = RuntimeConfig(policy_path=args.policy, waypoints_xy=generate_training_track(), action_delay_steps=0)
-    runtime = SafeRaceRuntime(config, adapter, dry_run=True)
+    config = RuntimeConfig.from_json(args.config, policy_path=args.policy)
+    if not config.dry_run:
+        raise RuntimeError("Refusing offline dry-run: set dry_run=true in the deployment JSON.")
+    runtime = SafeRaceRuntime(config, adapter)
     runtime.enable_dry_run()
 
     max_action = 0.0
