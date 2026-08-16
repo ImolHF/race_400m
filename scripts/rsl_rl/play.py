@@ -62,7 +62,11 @@ import time
 import torch
 
 import isaaclab.sim as sim_utils
-import omni.ui as ui
+# ``omni.ui`` is unavailable in Isaac Sim headless builds.  The monitor is
+# only created for an interactive marker viewport, so keep the export/play
+# path usable on a server without it.
+if args_cli.track_markers and not args_cli.headless:
+    import omni.ui as ui
 from rsl_rl.runners import OnPolicyRunner
 
 from isaaclab.envs import (
@@ -195,6 +199,8 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     active_track_marker = None
     track_positions = None
     if args_cli.track_markers:
+        if args_cli.headless:
+            raise ValueError("--track-markers requires an interactive (non-headless) Isaac Sim session.")
         static_track_markers, active_track_marker, track_positions = _create_track_markers(env)
         print("[INFO] Track markers: blue=checkpoint, green=start, red=finish, yellow=active target.")
         race_monitor = _create_race_monitor()
