@@ -9,6 +9,7 @@
 
 import argparse
 import sys
+from typing import Any
 
 from isaaclab.app import AppLauncher
 
@@ -150,7 +151,7 @@ def _update_active_track_marker(active_marker: VisualizationMarkers, track_posit
     return target_index
 
 
-def _create_race_monitor() -> dict[str, ui.Label]:
+def _create_race_monitor() -> dict[str, Any]:
     """Create a small in-app panel for the evaluation's simulation metrics."""
     window = ui.Window("Race Monitor", width=330, height=140)
     with window.frame:
