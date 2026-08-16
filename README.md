@@ -456,3 +456,23 @@ stress boundary. These are still Isaac Lab evaluations. Strict sim2sim comes
 next: run the same checkpoint through an independently implemented MuJoCo G1
 adapter with exactly the same observation order, action scaling, waypoint
 interface, and test cases.
+
+If a combined deployment-gap run fails, do not infer its cause from the
+aggregate result. Run the five moderate single-factor ablations first:
+
+```bash
+for component in action_delay joint_state base_state waypoint odometry; do
+  CUDA_VISIBLE_DEVICES=6 python scripts/rsl_rl/evaluate_race.py \
+    --task Template-Race-400m --headless \
+    --checkpoint /absolute/path/locked_elbow_arm_model.pt \
+    --robustness_suite=nominal --reality_gap_suite=moderate \
+    --reality_gap_components "$component" \
+    --num_envs 256 --num_episodes 256 --seed 42 \
+    --output_dir "outputs/eval/locked_elbow_gap_ablation_${component}"
+done
+```
+
+Omit `--reality_gap_components` (or pass `all`) for the existing combined
+suite. The five components are: action delay, joint position/velocity noise,
+base velocity/projected-gravity noise, waypoint noise, and persistent
+odometry scale/yaw error.

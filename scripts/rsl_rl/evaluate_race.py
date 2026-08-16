@@ -47,6 +47,16 @@ parser.add_argument(
     default="nominal",
     help="Inference-side action delay, state noise, and odometry-drift suite for real-robot relevance.",
 )
+parser.add_argument(
+    "--reality_gap_components",
+    nargs="+",
+    choices=("all", "action_delay", "joint_state", "base_state", "waypoint", "odometry"),
+    default=("all",),
+    help=(
+        "Subset of deployment-gap effects to enable. Use one component for a "
+        "single-factor ablation, or omit this option (all) for the combined suite."
+    ),
+)
 cli_args.add_rsl_rl_args(parser)
 AppLauncher.add_app_launcher_args(parser)
 args_cli, hydra_args = parser.parse_known_args()
@@ -168,12 +178,21 @@ def _configure_robustness_suite(env_cfg, suite: str) -> dict[str, object]:
     }
 
 
-def _reality_gap_config(suite: str) -> dict[str, float | int | str]:
-    """Return inference-side perturbations without changing simulator physics."""
+def _reality_gap_config(suite: str, components: tuple[str, ...] | list[str]) -> dict[str, float | int | str | list[str]]:
+    """Return selected inference-side perturbations without changing simulator physics."""
     if suite == "nominal":
-        return {"name": "nominal", "description": "Unmodified policy observation and action timing."}
-    if suite == "moderate":
         return {
+            "name": "nominal",
+            "components": [],
+            "description": "Unmodified policy observation and action timing.",
+        }
+
+    selected = {"action_delay", "joint_state", "base_state", "waypoint", "odometry"}
+    if "all" not in components:
+        selected &= set(components)
+
+    if suite == "moderate":
+        base = {
             "name": "moderate",
             "action_delay_steps": 1,
             "joint_pos_noise_rad": 0.003,
@@ -185,18 +204,33 @@ def _reality_gap_config(suite: str) -> dict[str, float | int | str]:
             "odometry_scale_error": 0.01,
             "odometry_yaw_bias_deg": 1.5,
         }
-    return {
-        "name": "strong",
-        "action_delay_steps": 2,
-        "joint_pos_noise_rad": 0.008,
-        "joint_vel_noise_radps": 0.10,
-        "base_velocity_noise_mps": 0.08,
-        "base_angular_velocity_noise_radps": 0.08,
-        "gravity_noise": 0.025,
-        "waypoint_noise_m": 0.08,
-        "odometry_scale_error": 0.03,
-        "odometry_yaw_bias_deg": 4.0,
+    else:
+        base = {
+            "name": "strong",
+            "action_delay_steps": 2,
+            "joint_pos_noise_rad": 0.008,
+            "joint_vel_noise_radps": 0.10,
+            "base_velocity_noise_mps": 0.08,
+            "base_angular_velocity_noise_radps": 0.08,
+            "gravity_noise": 0.025,
+            "waypoint_noise_m": 0.08,
+            "odometry_scale_error": 0.03,
+            "odometry_yaw_bias_deg": 4.0,
+        }
+
+    disabled = {
+        "action_delay": ("action_delay_steps",),
+        "joint_state": ("joint_pos_noise_rad", "joint_vel_noise_radps"),
+        "base_state": ("base_velocity_noise_mps", "base_angular_velocity_noise_radps", "gravity_noise"),
+        "waypoint": ("waypoint_noise_m",),
+        "odometry": ("odometry_scale_error", "odometry_yaw_bias_deg"),
     }
+    for component, keys in disabled.items():
+        if component not in selected:
+            for key in keys:
+                base[key] = 0
+    base["components"] = sorted(selected)
+    return base
 
 
 def _sample_odometry_parameters(config: dict[str, float | int | str], count: int, device: torch.device):
@@ -285,7 +319,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlOnPolic
         agent_cfg.seed = args_cli.seed
     env_cfg.sim.device = args_cli.device if args_cli.device is not None else env_cfg.sim.device
     suite_config = _configure_robustness_suite(env_cfg, args_cli.robustness_suite)
-    reality_gap_config = _reality_gap_config(args_cli.reality_gap_suite)
+    reality_gap_config = _reality_gap_config(args_cli.reality_gap_suite, args_cli.reality_gap_components)
 
     # checkpoint must be an absolute, existing path
     checkpoint = os.path.abspath(args_cli.checkpoint)
