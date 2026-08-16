@@ -15,7 +15,7 @@ Do not progress if any condition fails: wrong left/right joint direction, comman
 
 ## Test order
 
-1. Read-only: 29 joint angles/velocities, IMU quaternion, timestamps.
+1. Read-only: 29 joint angles/velocities, IMU quaternion, timestamps. The SDK adapter must convert each received state timestamp to local `time.monotonic()` time before handing it to the runtime; raw robot-clock time is not valid for the 80 ms timeout gate.
 2. Suspended: default pose, then low-amplitude single-joint direction checks.
 3. Ground: stand 60 s.
 4. Protected 3–5 m walk, repeated three times.

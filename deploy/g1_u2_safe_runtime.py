@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 import json
 from pathlib import Path
+import time
 from typing import Sequence
 
 import numpy as np
@@ -42,7 +43,7 @@ class Mode(str, Enum):
 
 @dataclass
 class G1U2State:
-    """All quantities must use SI units; quaternion is world-frame ``wxyz``."""
+    """All quantities use SI units; ``stamp_s`` is local ``time.monotonic()`` receipt time."""
 
     q: np.ndarray
     dq: np.ndarray
@@ -146,9 +147,9 @@ def _projected_gravity(quat: np.ndarray) -> np.ndarray:
 class SafeRaceRuntime:
     """Policy invocation, 200-point navigation and command safety guard."""
 
-    def __init__(self, config: RuntimeConfig, adapter: G1U2Adapter, dry_run: bool | None = None):
+    def __init__(self, config: RuntimeConfig, adapter: G1U2Adapter):
         self.cfg, self.adapter = config, adapter
-        self.dry_run = config.dry_run if dry_run is None else dry_run
+        self.dry_run = config.dry_run
         self.policy = torch.jit.load(str(config.policy_path), map_location="cpu").eval()
         self.waypoints = np.asarray(config.waypoints_xy, dtype=np.float32)
         if self.waypoints.ndim != 2 or self.waypoints.shape[1] != 2:
@@ -192,10 +193,15 @@ class SafeRaceRuntime:
 
     def _fault_if_unsafe(self, state: G1U2State) -> None:
         tilt = float(np.linalg.norm(_projected_gravity(state.imu_quat_wxyz)[:2]))
-        if not np.isfinite(state.q).all() or not np.isfinite(state.dq).all() or tilt > self.cfg.max_tilt_rad:
+        # A zero stamp is reserved for the offline nominal adapter. A hardware
+        # adapter must stamp a received state with its *local* monotonic clock;
+        # raw robot-clock timestamps are not comparable here.
+        stale = state.stamp_s > 0.0 and time.monotonic() - state.stamp_s > self.cfg.command_timeout_s
+        if (not np.isfinite(state.q).all() or not np.isfinite(state.dq).all()
+                or tilt > self.cfg.max_tilt_rad or stale):
             self.mode = Mode.FAULT
             self.adapter.emergency_hold()
-            raise RuntimeError(f"Safety fault: tilt={tilt:.3f} rad or invalid state.")
+            raise RuntimeError(f"Safety fault: tilt={tilt:.3f}, stale={stale}, or invalid state.")
 
     def step(self) -> MotorCommand:
         state = self.adapter.read_state()
