@@ -123,6 +123,18 @@ class SafeRaceRuntime:
             raise RuntimeError("Refusing to arm: set physical_enable only after hanging and E-stop checks; dry_run must be False.")
         self.mode = Mode.STAND
 
+    def enable_dry_run(self) -> None:
+        """Enable policy inference without ever permitting a hardware send.
+
+        This is intentionally separate from :meth:`arm_policy`: it is useful
+        for validating the observation/action contract on a development PC,
+        but it cannot be reused to arm a physical robot.
+        """
+
+        if not self.dry_run:
+            raise RuntimeError("enable_dry_run is only available with dry_run=True.")
+        self.mode = Mode.STAND
+
     def _observation(self, state: G1U2State) -> np.ndarray:
         if state.q.shape != (29,) or state.dq.shape != (29,):
             raise ValueError("Expected 29 G1 U2 joint positions and velocities in official SDK2 order.")
