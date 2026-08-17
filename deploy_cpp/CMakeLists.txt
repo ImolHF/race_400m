@@ -35,7 +35,9 @@ if(ENABLE_ROS2_LOWSTATE_RELAY)
   find_package(rclcpp REQUIRED)
   find_package(std_msgs REQUIRED)
   add_executable(g1_lowstate_relay src/lowstate_relay.cpp)
-  target_link_libraries(g1_lowstate_relay PRIVATE unitree_sdk2)
+  # ament_target_dependencies uses CMake's plain link signature on ROS Foxy;
+  # keep this target consistent with it.
+  target_link_libraries(g1_lowstate_relay unitree_sdk2)
   ament_target_dependencies(g1_lowstate_relay rclcpp std_msgs)
 endif()
 
