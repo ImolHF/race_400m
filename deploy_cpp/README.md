@@ -32,6 +32,28 @@ when it differs from the packaged source.
    emergency stop, and suspension may a separately reviewed command program be
    created.
 
+## Optional ROS 2 odometry probe (read-only)
+
+The discovered active estimator topic on this G1 is
+`/state_estimator/odom_pelvis` (`nav_msgs/msg/Odometry`). On the development
+computer, build and run this only after selecting its ROS 2 environment:
+
+```bash
+source /opt/ros/foxy/setup.bash
+cd ~/g1_race_deployment_package/deploy_cpp
+cmake -S . -B build -DUNITREE_SDK2_DIR=../third_party/unitree_sdk2 -DENABLE_ROS2_ODOM_READ_ONLY=ON
+cmake --build build --target g1_odom_read_only -j2
+./build/g1_odom_read_only /state_estimator/odom_pelvis
+```
+
+It reports XY position in the estimator's `odom` frame, ROS quaternion in
+**x,y,z,w** order, and linear/angular velocity. It has no command publisher
+and sends nothing. Stop with `Ctrl-C`.
+
+The `odom` origin is arbitrary. Do not record an XY race origin until the robot
+is standing at the physical start line and facing the intended forward direction.
+The later route adapter must transform this frame to the training track frame.
+
 ## Optional LibTorch check
 
 After a compatible LibTorch installation is provided on the Ubuntu machine:

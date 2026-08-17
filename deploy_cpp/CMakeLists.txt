@@ -18,6 +18,17 @@ target_link_libraries(g1_read_only PRIVATE unitree_sdk2)
 
 add_executable(g1_joint_map_report src/joint_map_report.cpp)
 
+option(ENABLE_ROS2_ODOM_READ_ONLY "Build ROS 2 odometry subscriber; it never publishes commands." OFF)
+if(ENABLE_ROS2_ODOM_READ_ONLY)
+  # Source the installed ROS 2 distribution before configuring CMake, e.g.
+  # source /opt/ros/foxy/setup.bash
+  find_package(ament_cmake REQUIRED)
+  find_package(rclcpp REQUIRED)
+  find_package(nav_msgs REQUIRED)
+  add_executable(g1_odom_read_only src/odom_read_only.cpp)
+  ament_target_dependencies(g1_odom_read_only rclcpp nav_msgs)
+endif()
+
 option(ENABLE_LIBTORCH_SHADOW "Build TorchScript shadow inference; never publishes motor commands." OFF)
 if(ENABLE_LIBTORCH_SHADOW)
   find_package(Torch REQUIRED)
