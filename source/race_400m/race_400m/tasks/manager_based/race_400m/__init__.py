@@ -24,6 +24,19 @@ gym.register(
 )
 
 gym.register(
+    id="Template-Race-400m-SingleGPU",
+    entry_point="isaaclab.envs:ManagerBasedRLEnv",
+    disable_env_checker=True,
+    kwargs={
+        # Same locked-elbow 84-observation / 14-action task as the proven
+        # main model. Only the PPO rollout length differs for one GPU.
+        "env_cfg_entry_point": f"{__name__}.race_400m_env_cfg:RaceEnvCfg",
+        "rsl_rl_cfg_entry_point": f"{agents.__name__}.rsl_rl_ppo_cfg:SingleGpuPPORunnerCfg",
+        "skrl_cfg_entry_point": f"{agents.__name__}:skrl_ppo_cfg.yaml",
+    },
+)
+
+gym.register(
     id="Template-Race-400m-LegOnly",
     entry_point="isaaclab.envs:ManagerBasedRLEnv",
     disable_env_checker=True,

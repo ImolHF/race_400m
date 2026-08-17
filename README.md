@@ -117,6 +117,29 @@ torchrun --standalone --nproc_per_node=2 scripts/rsl_rl/train.py \
   --num_envs 4096 --max_iterations 8000 --run_name locked_elbow_arm_from_scratch
 ```
 
+### One-GPU training (same main-model task)
+
+`Template-Race-400m-SingleGPU` uses the same locked-elbow robot,
+84-observation policy interface, 14 actions, rewards, and waypoint logic as
+the main `Template-Race-400m` task. It only uses 48 rollout steps, so one GPU
+with 4096 environments keeps the two-GPU batch size of 196,608 samples per
+PPO update.
+
+```bash
+export CUDA_VISIBLE_DEVICES=0
+export OMP_NUM_THREADS=1
+export MKL_NUM_THREADS=1
+export OPENBLAS_NUM_THREADS=1
+
+python scripts/rsl_rl/train.py \
+  --task Template-Race-400m-SingleGPU --headless \
+  --num_envs 4096 --max_iterations 8000 \
+  --run_name lane_v2_single_gpu
+```
+
+Do not use `torchrun` or `--distributed` for this one-GPU task. Keep
+`--num_envs 4096` unless PhysX buffers are explicitly resized and smoke-tested.
+
 ## Recommended recovery path: leg-only race task
 
 If the arm-swing policy has reduced lap-completion reliability, use the

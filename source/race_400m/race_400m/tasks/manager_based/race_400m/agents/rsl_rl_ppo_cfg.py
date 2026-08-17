@@ -44,6 +44,17 @@ class PPORunnerCfg(RslRlOnPolicyRunnerCfg):
 
 
 @configclass
+class SingleGpuPPORunnerCfg(PPORunnerCfg):
+    """One-GPU batching for the unchanged locked-elbow main task.
+
+    4096 environments x 48 rollout steps equals 196,608 samples per update,
+    matching the established two-GPU setting (2 x 4096 x 24).
+    """
+
+    num_steps_per_env = 48
+
+
+@configclass
 class LegOnlyPPORunnerCfg(PPORunnerCfg):
     """Runner name retained so existing 12-action checkpoints can resume."""
 
