@@ -13,6 +13,13 @@ num_envs="${NUM_ENVS:-4096}"
 max_iterations="${MAX_ITERATIONS:-8000}"
 run_stamp="${RUN_STAMP:-$(date +%Y-%m-%d_%H-%M-%S)}"
 log_dir="logs/lane_launch/${run_stamp}"
+# Isaac Lab training must run through its bundled Python runtime.  Override
+# this on the server, e.g. ISAACLAB_APP=/d/home/wei-chen/IsaacLab/isaaclab.sh.
+isaaclab_app="${ISAACLAB_APP:-isaaclab.sh}"
+if ! [[ -x "$isaaclab_app" ]] && ! command -v "$isaaclab_app" >/dev/null 2>&1; then
+  echo "Isaac Lab launcher not found: $isaaclab_app (set ISAACLAB_APP)" >&2
+  exit 2
+fi
 mkdir -p "$log_dir"
 
 export OMP_NUM_THREADS="${OMP_NUM_THREADS:-1}"
@@ -27,7 +34,7 @@ for lane in 1 2 3 4 5; do
   run_name="lane${lane}_${run_stamp}"
 
   echo "Launching lane ${lane} on GPU ${gpu}: ${task}"
-  CUDA_VISIBLE_DEVICES="$gpu" nohup python scripts/rsl_rl/train.py \
+  CUDA_VISIBLE_DEVICES="$gpu" nohup "$isaaclab_app" -p scripts/rsl_rl/train.py \
     --task "$task" --headless --num_envs "$num_envs" \
     --max_iterations "$max_iterations" --run_name "$run_name" \
     >"$log_file" 2>&1 &
