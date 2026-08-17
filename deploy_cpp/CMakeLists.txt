@@ -31,6 +31,10 @@ endif()
 
 option(ENABLE_LIBTORCH_SHADOW "Build TorchScript shadow inference; never publishes motor commands." OFF)
 if(ENABLE_LIBTORCH_SHADOW)
+  # NVIDIA's Jetson PyTorch wheel runs CMake CUDA feature probes.  The base
+  # project intentionally stays C++-only for the small read-only tools, so
+  # enable CUDA only for this optional shadow-inference target.
+  enable_language(CUDA)
   find_package(Torch REQUIRED)
   add_executable(g1_shadow_policy src/shadow_policy.cpp)
   target_link_libraries(g1_shadow_policy PRIVATE unitree_sdk2 ${TORCH_LIBRARIES})
