@@ -47,7 +47,16 @@ from .mdp.delayed_actions import DelayedJointPositionActionCfg, RandomOneStepDel
 from .mdp.terminations import is_completed as _is_completed
 from .mdp.terminations import is_completed_after_stop as _is_completed_after_stop
 from .mdp.terminations import robot_fallen as _robot_fallen
-from .track_scene_cfg import RobustTrackSceneCfg, TrackSceneCfg, TrackpointCfg
+from .track_scene_cfg import (
+    Lane1TrackpointCfg,
+    Lane2TrackpointCfg,
+    Lane3TrackpointCfg,
+    Lane4TrackpointCfg,
+    Lane5TrackpointCfg,
+    RobustTrackSceneCfg,
+    TrackSceneCfg,
+    TrackpointCfg,
+)
 
 
 @configclass
@@ -676,6 +685,54 @@ class RaceEnvCfg(ManagerBasedRLEnvCfg):
         track_cfg = TrackpointCfg()
         self.path_points = track_cfg.path_points
         print(f"[INFO] Fixed navigation track: {len(self.path_points)} targets, 0 m to 400 m.")
+
+    def _reset_robot_at_track_start(self) -> None:
+        """Align the default root pose with the unmodified survey waypoint 0."""
+        assert self.path_points is not None
+        start_x, start_y = self.path_points[0]
+        _, _, start_z = self.scene.robot.init_state.pos
+        self.scene.robot.init_state.pos = (start_x, start_y, start_z)
+        print(f"[INFO] Robot reset aligned to waypoint 0: ({start_x:.3f}, {start_y:.3f}).")
+
+
+@configclass
+class Lane1RaceEnvCfg(RaceEnvCfg):
+    def __post_init__(self):
+        super().__post_init__()
+        self.path_points = Lane1TrackpointCfg().path_points
+        self._reset_robot_at_track_start()
+
+
+@configclass
+class Lane2RaceEnvCfg(RaceEnvCfg):
+    def __post_init__(self):
+        super().__post_init__()
+        self.path_points = Lane2TrackpointCfg().path_points
+        self._reset_robot_at_track_start()
+
+
+@configclass
+class Lane3RaceEnvCfg(RaceEnvCfg):
+    def __post_init__(self):
+        super().__post_init__()
+        self.path_points = Lane3TrackpointCfg().path_points
+        self._reset_robot_at_track_start()
+
+
+@configclass
+class Lane4RaceEnvCfg(RaceEnvCfg):
+    def __post_init__(self):
+        super().__post_init__()
+        self.path_points = Lane4TrackpointCfg().path_points
+        self._reset_robot_at_track_start()
+
+
+@configclass
+class Lane5RaceEnvCfg(RaceEnvCfg):
+    def __post_init__(self):
+        super().__post_init__()
+        self.path_points = Lane5TrackpointCfg().path_points
+        self._reset_robot_at_track_start()
 
 
 @configclass

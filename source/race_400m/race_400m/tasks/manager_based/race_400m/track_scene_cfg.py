@@ -87,3 +87,62 @@ class TrackpointCfg:
     def _generate_path_points(self) -> list[tuple[float, float]]:
         point_count = int(self.total_distance / self.point_gap)
         return [self._get_track_point(index * self.point_gap) for index in range(point_count + 1)]
+
+
+@configclass
+class StadiumLaneTrackpointCfg(TrackpointCfg):
+    """Parameterized 400 m stadium lane from the five supplied lane layouts.
+
+    The supplied survey equations are preserved without coordinate
+    translation.  The environment configuration resets the robot at target
+    zero, so each lane's physical start coordinate remains its survey value.
+    """
+
+    def _get_track_point(self, distance: float) -> tuple[float, float]:
+        straight, radius, start = self.straight_length, self.radius, self.start_offset
+        half_curve = math.pi * radius
+        if distance < start:
+            return -start + distance, 0.0
+        if distance < start + half_curve:
+            theta = (distance - start) / radius
+            return radius * math.sin(theta), radius * (1.0 - math.cos(theta))
+        if distance < start + half_curve + straight:
+            return -(distance - (start + half_curve)), 2.0 * radius
+        if distance < start + 2.0 * half_curve + straight:
+            theta = (distance - (start + half_curve + straight)) / radius
+            return -straight - radius * math.sin(theta), 2.0 * radius - radius * (1.0 - math.cos(theta))
+        return -straight + distance - (start + 2.0 * half_curve + straight), 0.0
+
+    def _generate_path_points(self) -> list[tuple[float, float]]:
+        point_count = int(self.total_distance / self.point_gap)
+        return [self._get_track_point(index * self.point_gap) for index in range(point_count + 1)]
+
+
+@configclass
+class Lane1TrackpointCfg(StadiumLaneTrackpointCfg):
+    radius: float = 22.990
+    start_offset: float = 34.690
+
+
+@configclass
+class Lane2TrackpointCfg(StadiumLaneTrackpointCfg):
+    radius: float = 25.090
+    start_offset: float = 21.495
+
+
+@configclass
+class Lane3TrackpointCfg(StadiumLaneTrackpointCfg):
+    radius: float = 27.190
+    start_offset: float = 8.300
+
+
+@configclass
+class Lane4TrackpointCfg(StadiumLaneTrackpointCfg):
+    radius: float = 29.290
+    start_offset: float = -4.895
+
+
+@configclass
+class Lane5TrackpointCfg(StadiumLaneTrackpointCfg):
+    radius: float = 31.390
+    start_offset: float = -18.089

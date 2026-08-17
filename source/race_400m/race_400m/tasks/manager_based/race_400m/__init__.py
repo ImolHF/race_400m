@@ -36,6 +36,22 @@ gym.register(
     },
 )
 
+# The five race lanes preserve the supplied survey coordinates.  Each config
+# also moves the default robot root pose to that lane's first waypoint.
+for _lane in range(1, 6):
+    gym.register(
+        id=f"Template-Race-400m-Lane{_lane}-SingleGPU",
+        entry_point="isaaclab.envs:ManagerBasedRLEnv",
+        disable_env_checker=True,
+        kwargs={
+            "env_cfg_entry_point": (
+                f"{__name__}.race_400m_env_cfg:Lane{_lane}RaceEnvCfg"
+            ),
+            "rsl_rl_cfg_entry_point": f"{agents.__name__}.rsl_rl_ppo_cfg:SingleGpuPPORunnerCfg",
+            "skrl_cfg_entry_point": f"{agents.__name__}:skrl_ppo_cfg.yaml",
+        },
+    )
+
 gym.register(
     id="Template-Race-400m-LegOnly",
     entry_point="isaaclab.envs:ManagerBasedRLEnv",
