@@ -35,6 +35,11 @@ if(ENABLE_LIBTORCH_SHADOW)
   # project intentionally stays C++-only for the small read-only tools, so
   # enable CUDA only for this optional shadow-inference target.
   enable_language(CUDA)
+  # JetPack 5.1.1 commonly ships an older CMake which recognizes CUDA 11.4
+  # but lacks its built-in CUDA17 flag table.  nvcc 11.4 supports this flag;
+  # publish it explicitly so Torch's feature probe can configure.
+  set(CMAKE_CUDA17_STANDARD_COMPILE_OPTION "-std=c++17")
+  set(CMAKE_CUDA17_EXTENSION_COMPILE_OPTION "-std=c++17")
   find_package(Torch REQUIRED)
   add_executable(g1_shadow_policy src/shadow_policy.cpp)
   target_link_libraries(g1_shadow_policy PRIVATE unitree_sdk2 ${TORCH_LIBRARIES})
