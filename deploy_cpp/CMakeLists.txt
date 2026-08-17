@@ -29,6 +29,16 @@ if(ENABLE_ROS2_ODOM_READ_ONLY)
   ament_target_dependencies(g1_odom_read_only rclcpp nav_msgs)
 endif()
 
+option(ENABLE_ROS2_LOWSTATE_RELAY "Build read-only LowState to diagnostic ROS relay; it never publishes LowCmd." OFF)
+if(ENABLE_ROS2_LOWSTATE_RELAY)
+  find_package(ament_cmake REQUIRED)
+  find_package(rclcpp REQUIRED)
+  find_package(std_msgs REQUIRED)
+  add_executable(g1_lowstate_relay src/lowstate_relay.cpp)
+  target_link_libraries(g1_lowstate_relay PRIVATE unitree_sdk2)
+  ament_target_dependencies(g1_lowstate_relay rclcpp std_msgs)
+endif()
+
 option(ENABLE_LIBTORCH_SHADOW "Build TorchScript shadow inference; never publishes motor commands." OFF)
 if(ENABLE_LIBTORCH_SHADOW)
   # NVIDIA's Jetson PyTorch wheel runs CMake CUDA feature probes.  The base

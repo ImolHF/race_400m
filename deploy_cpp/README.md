@@ -54,6 +54,24 @@ The `odom` origin is arbitrary. Do not record an XY race origin until the robot
 is standing at the physical start line and facing the intended forward direction.
 The later route adapter must transform this frame to the training track frame.
 
+## Optional LowState diagnostic relay (no motor messages)
+
+Some G1 development images publish `/lowstate` but do not install the matching
+ROS Python message package. This optional bridge subscribes through official
+SDK2 and publishes a new diagnostic-only standard ROS topic
+`/g1_shadow/lowstate_f32`. Its 66 floats are: 29 positions, 29 velocities,
+SDK IMU quaternion in `w,x,y,z`, gyro in rad/s, and `mode_machine`.
+It contains no `LowCmd` type, command publisher, control client, or policy.
+
+```bash
+source /opt/ros/foxy/setup.bash
+cd ~/g1_race_deployment_package/deploy_cpp
+cmake -S . -B build -DUNITREE_SDK2_DIR=../third_party/unitree_sdk2 \
+  -DENABLE_ROS2_LOWSTATE_RELAY=ON
+cmake --build build --target g1_lowstate_relay -j2
+./build/g1_lowstate_relay eth0
+```
+
 ## Optional LibTorch check
 
 After a compatible LibTorch installation is provided on the Ubuntu machine:
