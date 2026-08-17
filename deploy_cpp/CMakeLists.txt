@@ -18,6 +18,9 @@ target_link_libraries(g1_read_only PRIVATE unitree_sdk2)
 
 add_executable(g1_joint_map_report src/joint_map_report.cpp)
 
+add_executable(g1_lowstate_snapshot src/lowstate_snapshot.cpp)
+target_link_libraries(g1_lowstate_snapshot PRIVATE unitree_sdk2)
+
 option(ENABLE_ROS2_ODOM_READ_ONLY "Build ROS 2 odometry subscriber; it never publishes commands." OFF)
 if(ENABLE_ROS2_ODOM_READ_ONLY)
   # Source the installed ROS 2 distribution before configuring CMake, e.g.
@@ -27,18 +30,6 @@ if(ENABLE_ROS2_ODOM_READ_ONLY)
   find_package(nav_msgs REQUIRED)
   add_executable(g1_odom_read_only src/odom_read_only.cpp)
   ament_target_dependencies(g1_odom_read_only rclcpp nav_msgs)
-endif()
-
-option(ENABLE_ROS2_LOWSTATE_RELAY "Build read-only LowState to diagnostic ROS relay; it never publishes LowCmd." OFF)
-if(ENABLE_ROS2_LOWSTATE_RELAY)
-  find_package(ament_cmake REQUIRED)
-  find_package(rclcpp REQUIRED)
-  find_package(std_msgs REQUIRED)
-  add_executable(g1_lowstate_relay src/lowstate_relay.cpp)
-  # ament_target_dependencies uses CMake's plain link signature on ROS Foxy;
-  # keep this target consistent with it.
-  target_link_libraries(g1_lowstate_relay unitree_sdk2)
-  ament_target_dependencies(g1_lowstate_relay rclcpp std_msgs)
 endif()
 
 option(ENABLE_LIBTORCH_SHADOW "Build TorchScript shadow inference; never publishes motor commands." OFF)
