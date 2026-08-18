@@ -23,10 +23,13 @@ import torch
 
 
 G1_NUM_MOTORS = 29
-# Official SDK2 low-level ordering for the 29-DoF G1. Verify this against the
-# robot firmware's reported joint names before enabling hardware output.
-POLICY_MOTOR_IDS = np.array([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 15, 22])
-ACTION_SCALE = np.array([0.25] * 4 + [0.20, 0.20] + [0.25] * 4 + [0.20, 0.20] + [0.18, 0.18])
+# The action order is the order resolved by Isaac Lab's regex joint list, not
+# the SDK motor-number order.  It was checked in Isaac Lab against the exact
+# locked-elbow checkpoint: L/R hip pitch, L/R hip roll, L/R hip yaw, L/R knee,
+# L/R shoulder pitch, L/R ankle pitch, L/R ankle roll.
+# Verify the SDK motor names on the physical firmware before enabling output.
+POLICY_MOTOR_IDS = np.array([0, 6, 1, 7, 2, 8, 3, 9, 15, 22, 4, 10, 5, 11])
+ACTION_SCALE = np.array([0.25] * 8 + [0.18] * 2 + [0.20] * 4)
 DEFAULT_Q = np.array(
     [-0.20, 0.0, 0.0, 0.42, -0.23, 0.0, -0.20, 0.0, 0.0, 0.42, -0.23, 0.0,
      0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.95, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.95,
