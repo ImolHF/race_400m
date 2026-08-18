@@ -16,6 +16,19 @@ import torch
 
 N_JOINTS, N_OBS, N_ACTIONS, DT = 29, 84, 14, 0.04
 
+# ``joint_pos_rel`` in the training observation is measured from the USD
+# articulation default pose, not from an arbitrary real-robot calibration
+# pose.  The order is the verified G1 SDK LowState order (motor ids 0..28).
+# Do not replace this with a live standing snapshot: doing so silently changes
+# the policy's input distribution and can produce unusable actions.
+TRAINING_DEFAULT_Q = [
+    -0.20, 0.0, 0.0, 0.42, -0.23, 0.0,  # left leg
+    -0.20, 0.0, 0.0, 0.42, -0.23, 0.0,  # right leg
+    0.0, 0.0, 0.0,                         # waist
+    0.0, 0.0, 0.0, 0.95, 0.0, 0.0, 0.0,   # left arm
+    0.0, 0.0, 0.0, 0.95, 0.0, 0.0, 0.0,   # right arm
+]
+
 
 def yaw_xyzw(x, y, z, w):
     return math.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z))
@@ -90,7 +103,9 @@ def load_calibration(path):
 
 def run(node, args):
     cal = load_calibration(args.calibration)
-    qref = [float(v) for v in cal["joint_reference_q"]]
+    # Calibration defines only the race-frame odometry origin and heading.
+    # Joint proprioception must retain the exact training-time reference.
+    qref = TRAINING_DEFAULT_Q
     ox, oy = [float(v) for v in cal["origin_odom_xy"]]
     oyaw = float(cal["origin_yaw_rad"])
     waypoints = json.loads(args.waypoints.read_text())
